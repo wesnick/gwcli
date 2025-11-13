@@ -1,0 +1,7 @@
+*~
+.sw[op]
+.*.sw[op]
+.envrc
+cmdg
+.worktrees/
+./gmailcli
