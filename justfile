@@ -6,11 +6,13 @@ default:
 
 # Build gwcli binary
 build:
-    go build -o gwcli ./cmd/gwcli
+    mkdir -p dist
+    go build -o dist/gwcli ./cmd/gwcli
 
 # Build with version info
 build-version VERSION:
-    go build -ldflags "-X main.version={{VERSION}}" -o gwcli ./cmd/gwcli
+    mkdir -p dist
+    go build -ldflags "-X main.version={{VERSION}}" -o dist/gwcli ./cmd/gwcli
 
 # Install gwcli to GOPATH/bin
 install:
@@ -33,7 +35,7 @@ check: vet test
 
 # Clean built binaries
 clean:
-    rm -f gwcli
+    rm -rf dist/
 
 # Run gwcli with arguments
 run *ARGS:
@@ -41,7 +43,7 @@ run *ARGS:
 
 # Build and run gwcli
 build-run *ARGS: build
-    ./gwcli {{ARGS}}
+    ./dist/gwcli {{ARGS}}
 
 # Show version
 version:

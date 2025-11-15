@@ -1,8 +1,8 @@
-module github.com/wesnick/cmdg
+module github.com/wesnick/gwcli
 
-go 1.23.0
+go 1.23.7
 
-toolchain go1.23.7
+toolchain go1.24.7
 
 require (
 	github.com/mattn/go-runewidth v0.0.16
@@ -25,6 +25,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/google/go-jsonnet v0.21.0 // indirect
 	github.com/google/s2a-go v0.1.8 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
@@ -41,4 +42,5 @@ require (
 	google.golang.org/grpc v1.69.2 // indirect
 	google.golang.org/protobuf v1.36.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	sigs.k8s.io/yaml v1.4.0 // indirect
 )

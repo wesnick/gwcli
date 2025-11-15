@@ -187,27 +187,123 @@ Email body extraction logic (in `message.go`):
 2. For multipart messages, recursively search parts
 3. Fall back to snippet if no body found
 
-## Configuration File
+## Configuration
 
-Location: `~/.cmdg/cmdg.conf`
+### Configuration Location
 
-Format: JSON containing OAuth2 tokens and client credentials. Do not commit this file.
+Location: `~/.config/gwcli/`
+
+Required files:
+- `credentials.json` - OAuth client credentials from Google Cloud Console
+- `token.json` - Auto-generated OAuth access/refresh tokens
+
+Optional files:
+- `config.jsonnet` - gmailctl-compatible label definitions (Jsonnet format)
+
+### Authentication Setup
+
+1. Go to https://console.developers.google.com
+2. Create a new project (or select existing)
+3. Enable Gmail API
+4. Create OAuth 2.0 Client ID (Desktop app)
+5. Download credentials as JSON
+6. Save to `~/.config/gwcli/credentials.json`
+7. Run `gwcli configure`
+
+Required OAuth scopes:
+- `https://www.googleapis.com/auth/gmail.modify`
+- `https://www.googleapis.com/auth/gmail.settings.basic`
+- `https://www.googleapis.com/auth/gmail.labels`
+
+### Label Management
+
+**Label Discovery:**
+gwcli reads label definitions exclusively from:
+1. `~/.config/gwcli/config.jsonnet` (required - no API fallback)
+2. System labels (INBOX, TRASH, etc.) are automatically added
+
+If config.jsonnet is missing, gwcli will error with a helpful message pointing to gmailctl setup instructions.
+
+**Label Operations:**
+- `gwcli labels list` - List all labels
+- `gwcli labels apply <label> --message <id>` - Apply label to message
+- `gwcli labels remove <label> --message <id>` - Remove label from message
+
+**Creating/Deleting Labels:**
+Use gmailctl for label management:
+```bash
+# Install gmailctl
+go install github.com/mbrt/gmailctl/cmd/gmailctl@latest
+
+# Edit label config
+gmailctl edit
+
+# See: https://github.com/mbrt/gmailctl for full documentation
+```
+
+### gmailctl Integration
+
+gwcli integrates with gmailctl for filter and label management. It includes wrapper commands that automatically inject the `--config` flag to use gwcli's config directory.
+
+**Wrapper Commands (in cmd/gwcli/gmailctl.go):**
+- `gwcli gmailctl download [-o file]` - Download filters from Gmail to config.jsonnet
+- `gwcli gmailctl apply [-y]` - Apply config.jsonnet to Gmail (with optional skip confirmation)
+- `gwcli gmailctl diff` - Show diff between local config and Gmail
+
+**Implementation Pattern:**
+All wrapper commands use subprocess execution:
+1. Check if gmailctl binary exists in PATH (`exec.LookPath("gmailctl")`)
+2. Build command with `--config` flag: `gmailctl --config ~/.config/gwcli <command> [args]`
+3. Execute using `exec.Command()` with stdin/stdout/stderr passthrough
+4. Return matching exit codes
+
+**Manual gmailctl Usage:**
+For advanced commands (edit, init, test, debug), users can run gmailctl directly:
+```bash
+gmailctl --config ~/.config/gwcli <command>
+```
+
+Example `~/.config/gwcli/config.jsonnet`:
+
+```jsonnet
+{
+  version: 'v1alpha3',
+  labels: [
+    { name: 'work' },
+    { name: 'personal' },
+    { name: 'receipts' },
+  ],
+  rules: [
+    {
+      filter: { from: 'example.com' },
+      actions: { labels: ['work'] }
+    }
+  ]
+}
+```
+
+You can also symlink to gmailctl's config:
+```bash
+ln -s ~/.gmailctl/config.jsonnet ~/.config/gwcli/config.jsonnet
+```
 
 ## Dependencies
 
 - **Kong** (`github.com/alecthomas/kong`) - CLI parsing (not Cobra)
-- **Google APIs** - Gmail, Drive, People APIs
+- **Google APIs** - Gmail API
 - **golang.org/x/oauth2** - OAuth2 authentication
 - **logrus** - Logging
 - **html-to-markdown/v2** (`github.com/JohannesKaufmann/html-to-markdown/v2`) - HTML to Markdown conversion
 - **yaml.v3** (`gopkg.in/yaml.v3`) - YAML marshaling for frontmatter
+- **go-jsonnet** (`github.com/google/go-jsonnet`) - Jsonnet parsing for gmailctl integration
 
 ## Common Gotchas
 
-1. **Config path**: Despite being "gwcli", it uses `~/.cmdg/` directory for backwards compatibility with cmdg
+1. **Config path**: gwcli uses `~/.config/gwcli/` directory (gmailctl-compatible authentication)
 2. **Kong syntax**: Command matching uses exact strings like `"messages list"` not path-style routes
 3. **No interactive prompts**: All commands must work non-interactively (for scripting)
 4. **Label IDs vs Names**: Always handle both - users may provide either
+5. **Label create/delete**: Use gmailctl for creating/deleting labels, not gwcli
 
 ## Error Handling Pattern
 

@@ -32,10 +32,10 @@ type EmailFrontmatter struct {
 
 // AttachmentMeta represents attachment metadata in YAML format
 type AttachmentMeta struct {
-	Filename     string `yaml:"filename"`
-	AttachmentID string `yaml:"attachment_id"`
-	MimeType     string `yaml:"mime_type"`
-	Size         int64  `yaml:"size"`
+	Index    int    `yaml:"index"`
+	Filename string `yaml:"filename"`
+	MimeType string `yaml:"mime_type"`
+	Size     int64  `yaml:"size"`
 }
 
 // formatSizeBytes converts bytes to human-readable format
@@ -89,8 +89,8 @@ func formatEmailAsMarkdown(frontmatter EmailFrontmatter, body string, attachment
 		output.WriteString("\n---\n")
 		output.WriteString("attachments:\n")
 		for _, att := range attachments {
-			output.WriteString(fmt.Sprintf("  - filename: %s\n", att.Filename))
-			output.WriteString(fmt.Sprintf("    attachment_id: %s\n", att.AttachmentID))
+			output.WriteString(fmt.Sprintf("  - index: %d\n", att.Index))
+			output.WriteString(fmt.Sprintf("    filename: %s\n", att.Filename))
 			output.WriteString(fmt.Sprintf("    mime_type: %s\n", att.MimeType))
 			output.WriteString(fmt.Sprintf("    size: %d\n", att.Size))
 		}
@@ -134,11 +134,11 @@ func formatEmailAsHTML(frontmatter EmailFrontmatter, body string, attachments []
 		output.WriteString("  <h3>Attachments</h3>\n")
 		output.WriteString("  <ul>\n")
 		for _, att := range attachments {
-			output.WriteString(fmt.Sprintf("    <li><code>%s</code> (%s, %s) <small>ID: %s</small></li>\n",
+			output.WriteString(fmt.Sprintf("    <li>[%d] <code>%s</code> (%s, %s)</li>\n",
+				att.Index,
 				escapeHTML(att.Filename),
 				escapeHTML(att.MimeType),
-				formatSizeBytes(att.Size),
-				escapeHTML(att.AttachmentID)))
+				formatSizeBytes(att.Size)))
 		}
 		output.WriteString("  </ul>\n")
 		output.WriteString("</div>\n")

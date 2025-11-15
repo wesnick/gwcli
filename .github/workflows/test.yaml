@@ -18,8 +18,9 @@ jobs:
           go-version-file: 'go.mod'
           cache-dependency-path: 'go.sum'
       - name: Build binary
-        run:
-           go build ./cmd/gwcli
+        run: |
+           mkdir -p dist
+           go build -o dist/gwcli ./cmd/gwcli
       - name: Vet
         run:
            go vet ./...

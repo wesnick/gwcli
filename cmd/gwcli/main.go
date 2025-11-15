@@ -11,7 +11,7 @@ import (
 var version = "dev"
 
 type CLI struct {
-	Config  string `help:"Config file path" default:"~/.cmdg/cmdg.conf" type:"path"`
+	Config  string `help:"Config directory path" default:"~/.config/gwcli" type:"path"`
 	JSON    bool   `help:"JSON output format"`
 	Verbose bool   `help:"Verbose logging"`
 	NoColor bool   `help:"Disable colored output"`
@@ -83,16 +83,6 @@ type CLI struct {
 			UserOnly bool `help:"User labels only" name:"user-only"`
 		} `cmd:"" help:"List labels"`
 
-		Create struct {
-			Name  string `arg:"" required:"" help:"Label name"`
-			Color string `help:"Label color"`
-		} `cmd:"" help:"Create label"`
-
-		Delete struct {
-			LabelID string `arg:"" required:"" help:"Label ID or name"`
-			Force   bool   `required:"" help:"Confirm deletion"`
-		} `cmd:"" help:"Delete label"`
-
 		Apply struct {
 			LabelID   string `arg:"" required:"" help:"Label ID or name"`
 			MessageID string `help:"Message ID" name:"message"`
@@ -104,7 +94,7 @@ type CLI struct {
 			MessageID string `help:"Message ID" name:"message"`
 			Stdin     bool   `help:"Read IDs from stdin"`
 		} `cmd:"" help:"Remove label from messages"`
-	} `cmd:"" help:"Label operations"`
+	} `cmd:"" help:"Label operations (use gmailctl to create/delete labels)"`
 
 	Attachments struct {
 		List struct {
@@ -112,12 +102,25 @@ type CLI struct {
 		} `cmd:"" help:"List attachments"`
 
 		Download struct {
-			MessageID    string `arg:"" required:"" help:"Message ID"`
-			AttachmentID string `help:"Specific attachment ID" name:"attachment-id"`
-			OutputDir    string `help:"Output directory" type:"path" default:"."`
-			Output       string `help:"Output filename (single attachment only)"`
+			MessageID string   `arg:"" required:"" help:"Message ID"`
+			Index     []string `help:"Attachment index (0-based, supports comma-separated and multiple flags)" short:"i"`
+			Filename  string   `help:"Filename pattern (glob)" short:"f"`
+			OutputDir string   `help:"Output directory" type:"path" default:"~/Downloads"`
+			Output    string   `help:"Output filename (single attachment only)"`
 		} `cmd:"" help:"Download attachments"`
 	} `cmd:"" help:"Attachment operations"`
+
+	Gmailctl struct {
+		Download struct {
+			Output string `short:"o" help:"Output file" default:"config.jsonnet"`
+		} `cmd:"" help:"Download filters from Gmail to config file"`
+
+		Apply struct {
+			Yes bool `short:"y" help:"Skip confirmation prompt"`
+		} `cmd:"" help:"Apply config.jsonnet to Gmail filters"`
+
+		Diff struct{} `cmd:"" help:"Show diff between local config and Gmail"`
+	} `cmd:"" help:"gmailctl filter management (requires gmailctl installed)"`
 }
 
 func main() {
@@ -142,7 +145,7 @@ func main() {
 
 	case "auth token-info":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
+		conn, err := getConnection(cli.Config, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -155,7 +158,7 @@ func main() {
 
 	case "messages list":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
+		conn, err := getConnection(cli.Config, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -168,7 +171,7 @@ func main() {
 
 	case "messages read <message-id>":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
+		conn, err := getConnection(cli.Config, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -181,7 +184,7 @@ func main() {
 
 	case "messages search <query>":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
+		conn, err := getConnection(cli.Config, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -194,7 +197,7 @@ func main() {
 
 	case "messages send":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
+		conn, err := getConnection(cli.Config, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -209,7 +212,7 @@ func main() {
 
 	case "messages delete":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
+		conn, err := getConnection(cli.Config, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -222,7 +225,7 @@ func main() {
 
 	case "messages mark-read":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
+		conn, err := getConnection(cli.Config, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -235,7 +238,7 @@ func main() {
 
 	case "messages mark-unread":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
+		conn, err := getConnection(cli.Config, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -248,7 +251,7 @@ func main() {
 
 	case "messages move":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
+		conn, err := getConnection(cli.Config, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -261,7 +264,7 @@ func main() {
 
 	case "labels list":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
+		conn, err := getConnection(cli.Config, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -272,35 +275,9 @@ func main() {
 			os.Exit(2)
 		}
 
-	case "labels create":
-		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
-		if err != nil {
-			out.writeError(err)
-			os.Exit(3)
-		}
-
-		if err := runLabelsCreate(cmdCtx, conn, cli.Labels.Create.Name, cli.Labels.Create.Color, out); err != nil {
-			out.writeError(err)
-			os.Exit(2)
-		}
-
-	case "labels delete":
-		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
-		if err != nil {
-			out.writeError(err)
-			os.Exit(3)
-		}
-
-		if err := runLabelsDelete(cmdCtx, conn, cli.Labels.Delete.LabelID, cli.Labels.Delete.Force, out); err != nil {
-			out.writeError(err)
-			os.Exit(2)
-		}
-
 	case "labels apply":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
+		conn, err := getConnection(cli.Config, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -313,7 +290,7 @@ func main() {
 
 	case "labels remove":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
+		conn, err := getConnection(cli.Config, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -326,7 +303,7 @@ func main() {
 
 	case "attachments list <message-id>":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
+		conn, err := getConnection(cli.Config, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -339,15 +316,33 @@ func main() {
 
 	case "attachments download <message-id>":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
+		conn, err := getConnection(cli.Config, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
 		}
 
 		if err := runAttachmentsDownload(cmdCtx, conn, cli.Attachments.Download.MessageID,
-			cli.Attachments.Download.AttachmentID, cli.Attachments.Download.OutputDir,
-			cli.Attachments.Download.Output, out); err != nil {
+			cli.Attachments.Download.Index, cli.Attachments.Download.Filename,
+			cli.Attachments.Download.OutputDir, cli.Attachments.Download.Output, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "gmailctl download":
+		if err := runGmailctlDownload(cli.Config, cli.Gmailctl.Download.Output, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "gmailctl apply":
+		if err := runGmailctlApply(cli.Config, cli.Gmailctl.Apply.Yes, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "gmailctl diff":
+		if err := runGmailctlDiff(cli.Config, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}

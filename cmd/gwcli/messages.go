@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/wesnick/cmdg/pkg/cmdg"
+	"github.com/wesnick/gwcli/pkg/gwcli"
 	"google.golang.org/api/gmail/v1"
 )
 
@@ -26,7 +26,7 @@ type messageListOutput struct {
 }
 
 // runMessagesList lists messages in a label
-func runMessagesList(ctx context.Context, conn *cmdg.CmdG, label string, limit int, unreadOnly bool, out *outputWriter) error {
+func runMessagesList(ctx context.Context, conn *gwcli.CmdG, label string, limit int, unreadOnly bool, out *outputWriter) error {
 	// Resolve label name to ID
 	labels := conn.Labels()
 
@@ -187,14 +187,14 @@ type messageReadOutput struct {
 }
 
 type attachmentInfo struct {
-	Filename     string `json:"filename"`
-	MimeType     string `json:"mimeType"`
-	Size         int64  `json:"size"`
-	AttachmentID string `json:"attachmentId"`
+	Index    int    `json:"index"`
+	Filename string `json:"filename"`
+	MimeType string `json:"mimeType"`
+	Size     int64  `json:"size"`
 }
 
 // extractRawHTML extracts the raw HTML body from a message without rendering it with lynx
-func extractRawHTML(ctx context.Context, conn *cmdg.CmdG, messageID string) (string, error) {
+func extractRawHTML(ctx context.Context, conn *gwcli.CmdG, messageID string) (string, error) {
 	// Fetch the message directly from Gmail API with full format to get payload
 	// but bypass cmdg's body rendering logic
 	gmailSvc := conn.GmailService()
@@ -211,7 +211,7 @@ func extractRawHTML(ctx context.Context, conn *cmdg.CmdG, messageID string) (str
 }
 
 // extractPlainText extracts plain text body without rendering HTML
-func extractPlainText(ctx context.Context, conn *cmdg.CmdG, messageID string) (string, error) {
+func extractPlainText(ctx context.Context, conn *gwcli.CmdG, messageID string) (string, error) {
 	gmailSvc := conn.GmailService()
 	msg, err := gmailSvc.Users.Messages.Get("me", messageID).
 		Format("full").
@@ -232,7 +232,7 @@ func extractPlainTextFromPart(part *gmail.MessagePart) string {
 
 	// Check if this part is plain text
 	if part.MimeType == "text/plain" && part.Body != nil && part.Body.Data != "" {
-		decoded, err := cmdg.MIMEDecode(string(part.Body.Data))
+		decoded, err := gwcli.MIMEDecode(string(part.Body.Data))
 		if err != nil {
 			return ""
 		}
@@ -264,7 +264,7 @@ func extractPlainTextFromPart(part *gmail.MessagePart) string {
 }
 
 // extractAttachmentsInfo extracts attachment info without triggering body rendering
-func extractAttachmentsInfo(ctx context.Context, conn *cmdg.CmdG, messageID string) ([]attachmentInfo, error) {
+func extractAttachmentsInfo(ctx context.Context, conn *gwcli.CmdG, messageID string) ([]attachmentInfo, error) {
 	gmailSvc := conn.GmailService()
 	msg, err := gmailSvc.Users.Messages.Get("me", messageID).
 		Format("full").
@@ -276,6 +276,12 @@ func extractAttachmentsInfo(ctx context.Context, conn *cmdg.CmdG, messageID stri
 
 	var attachments []attachmentInfo
 	extractAttachmentsFromPart(msg.Payload, &attachments)
+
+	// Set indices
+	for i := range attachments {
+		attachments[i].Index = i
+	}
+
 	return attachments, nil
 }
 
@@ -288,10 +294,9 @@ func extractAttachmentsFromPart(part *gmail.MessagePart, attachments *[]attachme
 	// Check if this part is an attachment
 	if part.Filename != "" && part.Body != nil {
 		*attachments = append(*attachments, attachmentInfo{
-			Filename:     part.Filename,
-			MimeType:     part.MimeType,
-			Size:         part.Body.Size,
-			AttachmentID: part.Body.AttachmentId,
+			Filename: part.Filename,
+			MimeType: part.MimeType,
+			Size:     part.Body.Size,
 		})
 	}
 
@@ -309,7 +314,7 @@ func extractHTMLFromPart(part *gmail.MessagePart) string {
 
 	// Check if this part is HTML
 	if part.MimeType == "text/html" && part.Body != nil && part.Body.Data != "" {
-		decoded, err := cmdg.MIMEDecode(string(part.Body.Data))
+		decoded, err := gwcli.MIMEDecode(string(part.Body.Data))
 		if err != nil {
 			return ""
 		}
@@ -341,14 +346,14 @@ func extractHTMLFromPart(part *gmail.MessagePart) string {
 }
 
 // runMessagesRead reads and displays a single message
-func runMessagesRead(ctx context.Context, conn *cmdg.CmdG, messageID string, raw, headersOnly, rawHTML, preferPlain bool, out *outputWriter) error {
+func runMessagesRead(ctx context.Context, conn *gwcli.CmdG, messageID string, raw, headersOnly, rawHTML, preferPlain bool, out *outputWriter) error {
 	// Validate flags
 	if rawHTML && preferPlain {
 		return fmt.Errorf("--raw-html and --prefer-plain are mutually exclusive")
 	}
 
 	// Create message and fetch at appropriate level
-	msg := cmdg.NewMessage(conn, messageID)
+	msg := gwcli.NewMessage(conn, messageID)
 
 	if raw {
 		// Fetch raw message
@@ -372,7 +377,7 @@ func runMessagesRead(ctx context.Context, conn *cmdg.CmdG, messageID string, raw
 
 	// Determine level and fetch message
 	// Always just load metadata - we extract bodies directly from API to avoid lynx
-	level := cmdg.LevelMetadata
+	level := gwcli.LevelMetadata
 	if err := msg.Preload(ctx, level); err != nil {
 		return fmt.Errorf("failed to get message metadata: %w", err)
 	}
@@ -551,10 +556,10 @@ func runMessagesRead(ctx context.Context, conn *cmdg.CmdG, messageID string, raw
 	if err == nil && len(attachmentsInfo) > 0 {
 		for _, att := range attachmentsInfo {
 			attachmentsMeta = append(attachmentsMeta, AttachmentMeta{
-				Filename:     att.Filename,
-				AttachmentID: att.AttachmentID,
-				MimeType:     att.MimeType,
-				Size:         att.Size,
+				Index:    att.Index,
+				Filename: att.Filename,
+				MimeType: att.MimeType,
+				Size:     att.Size,
 			})
 		}
 	}
@@ -581,7 +586,7 @@ func runMessagesRead(ctx context.Context, conn *cmdg.CmdG, messageID string, raw
 }
 
 // runMessagesSearch searches for messages using Gmail query syntax
-func runMessagesSearch(ctx context.Context, conn *cmdg.CmdG, query string, limit int, out *outputWriter) error {
+func runMessagesSearch(ctx context.Context, conn *gwcli.CmdG, query string, limit int, out *outputWriter) error {
 	// Search uses empty label to search all mail
 	page, err := conn.ListMessages(ctx, "", query, "")
 	if err != nil {
@@ -701,7 +706,7 @@ func runMessagesSearch(ctx context.Context, conn *cmdg.CmdG, query string, limit
 }
 
 // runMessagesSend sends an email message
-func runMessagesSend(ctx context.Context, conn *cmdg.CmdG, to, cc, bcc []string, subject, body string, attachments []string, html bool, threadID string, out *outputWriter) error {
+func runMessagesSend(ctx context.Context, conn *gwcli.CmdG, to, cc, bcc []string, subject, body string, attachments []string, html bool, threadID string, out *outputWriter) error {
 	// Read body from stdin if not provided
 	if body == "" {
 		scanner := bufio.NewScanner(os.Stdin)
@@ -716,14 +721,14 @@ func runMessagesSend(ctx context.Context, conn *cmdg.CmdG, to, cc, bcc []string,
 	}
 
 	// Build message parts
-	parts := []*cmdg.Part{}
+	parts := []*gwcli.Part{}
 
 	// Add body
 	contentType := `text/plain; charset="UTF-8"`
 	if html {
 		contentType = `text/html; charset="UTF-8"`
 	}
-	parts = append(parts, &cmdg.Part{
+	parts = append(parts, &gwcli.Part{
 		Header: textproto.MIMEHeader{
 			"Content-Type":        {contentType},
 			"Content-Disposition": {"inline"},
@@ -751,7 +756,7 @@ func runMessagesSend(ctx context.Context, conn *cmdg.CmdG, to, cc, bcc []string,
 			mimeType = "text/plain"
 		}
 
-		parts = append(parts, &cmdg.Part{
+		parts = append(parts, &gwcli.Part{
 			Header: textproto.MIMEHeader{
 				"Content-Type":        {fmt.Sprintf(`%s; name=%q`, mimeType, filename)},
 				"Content-Disposition": {fmt.Sprintf(`attachment; filename=%q`, filename)},
@@ -780,7 +785,7 @@ func runMessagesSend(ctx context.Context, conn *cmdg.CmdG, to, cc, bcc []string,
 	// Note: SendParts API does not return the message ID of the sent message.
 	// This is a limitation of the Gmail API's messages.send endpoint when using
 	// raw RFC822 format. The API only confirms successful submission.
-	err := conn.SendParts(ctx, cmdg.ThreadID(threadID), multipartType, headers, parts)
+	err := conn.SendParts(ctx, gwcli.ThreadID(threadID), multipartType, headers, parts)
 	if err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
@@ -795,7 +800,7 @@ func runMessagesSend(ctx context.Context, conn *cmdg.CmdG, to, cc, bcc []string,
 }
 
 // runMessagesDelete deletes messages (moves to trash)
-func runMessagesDelete(ctx context.Context, conn *cmdg.CmdG, messageID string, stdin bool, verbose bool, out *outputWriter) error {
+func runMessagesDelete(ctx context.Context, conn *gwcli.CmdG, messageID string, stdin bool, verbose bool, out *outputWriter) error {
 	var ids []string
 	var err error
 
@@ -842,7 +847,7 @@ func runMessagesDelete(ctx context.Context, conn *cmdg.CmdG, messageID string, s
 }
 
 // runMessagesMarkRead marks messages as read
-func runMessagesMarkRead(ctx context.Context, conn *cmdg.CmdG, messageID string, stdin bool, verbose bool, out *outputWriter) error {
+func runMessagesMarkRead(ctx context.Context, conn *gwcli.CmdG, messageID string, stdin bool, verbose bool, out *outputWriter) error {
 	var ids []string
 	var err error
 
@@ -859,7 +864,7 @@ func runMessagesMarkRead(ctx context.Context, conn *cmdg.CmdG, messageID string,
 	}
 
 	// Remove UNREAD label
-	unreadLabelID := cmdg.Unread
+	unreadLabelID := gwcli.Unread
 
 	// Batch operation
 	bp := newBatchProcessor(len(ids), verbose)
@@ -883,7 +888,7 @@ func runMessagesMarkRead(ctx context.Context, conn *cmdg.CmdG, messageID string,
 }
 
 // runMessagesMarkUnread marks messages as unread
-func runMessagesMarkUnread(ctx context.Context, conn *cmdg.CmdG, messageID string, stdin bool, verbose bool, out *outputWriter) error {
+func runMessagesMarkUnread(ctx context.Context, conn *gwcli.CmdG, messageID string, stdin bool, verbose bool, out *outputWriter) error {
 	var ids []string
 	var err error
 
@@ -900,7 +905,7 @@ func runMessagesMarkUnread(ctx context.Context, conn *cmdg.CmdG, messageID strin
 	}
 
 	// Add UNREAD label
-	unreadLabelID := cmdg.Unread
+	unreadLabelID := gwcli.Unread
 
 	// Batch operation
 	bp := newBatchProcessor(len(ids), verbose)
@@ -924,7 +929,7 @@ func runMessagesMarkUnread(ctx context.Context, conn *cmdg.CmdG, messageID strin
 }
 
 // runMessagesMove moves messages to a different label
-func runMessagesMove(ctx context.Context, conn *cmdg.CmdG, messageID, toLabelName string, stdin bool, verbose bool, out *outputWriter) error {
+func runMessagesMove(ctx context.Context, conn *gwcli.CmdG, messageID, toLabelName string, stdin bool, verbose bool, out *outputWriter) error {
 	var ids []string
 	var err error
 
@@ -963,8 +968,8 @@ func runMessagesMove(ctx context.Context, conn *cmdg.CmdG, messageID, toLabelNam
 	bp := newBatchProcessor(len(ids), verbose)
 	err = bp.process(ctx, ids, func(ctx context.Context, id string) error {
 		// Get current labels
-		msg := cmdg.NewMessage(conn, id)
-		if err := msg.Preload(ctx, cmdg.LevelMinimal); err != nil {
+		msg := gwcli.NewMessage(conn, id)
+		if err := msg.Preload(ctx, gwcli.LevelMinimal); err != nil {
 			return err
 		}
 
@@ -972,7 +977,7 @@ func runMessagesMove(ctx context.Context, conn *cmdg.CmdG, messageID, toLabelNam
 		removeLabels := []string{}
 		if msg.Response != nil {
 			for _, labelID := range msg.Response.LabelIds {
-				if labelID == cmdg.Inbox {
+				if labelID == gwcli.Inbox {
 					removeLabels = append(removeLabels, labelID)
 				}
 			}

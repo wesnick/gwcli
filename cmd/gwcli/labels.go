@@ -6,8 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/wesnick/cmdg/pkg/cmdg"
-	"google.golang.org/api/gmail/v1"
+	"github.com/wesnick/gwcli/pkg/gwcli"
 )
 
 // labelListOutput is JSON output for labels
@@ -21,11 +20,11 @@ type labelListOutput struct {
 }
 
 // runLabelsList lists all labels
-func runLabelsList(ctx context.Context, conn *cmdg.CmdG, systemOnly, userOnly bool, out *outputWriter) error {
+func runLabelsList(ctx context.Context, conn *gwcli.CmdG, systemOnly, userOnly bool, out *outputWriter) error {
 	labels := conn.Labels()
 
 	// Filter
-	filtered := []*cmdg.Label{}
+	filtered := []*gwcli.Label{}
 	for _, l := range labels {
 		if l.Response == nil {
 			continue
@@ -71,66 +70,8 @@ func runLabelsList(ctx context.Context, conn *cmdg.CmdG, systemOnly, userOnly bo
 	return out.writeTable(headers, rows)
 }
 
-// runLabelsCreate creates a new label
-func runLabelsCreate(ctx context.Context, conn *cmdg.CmdG, name, color string, out *outputWriter) error {
-	label := &gmail.Label{
-		Name:                  name,
-		LabelListVisibility:   "labelShow",
-		MessageListVisibility: "show",
-	}
-
-	if color != "" {
-		label.Color = &gmail.LabelColor{
-			BackgroundColor: color,
-		}
-	}
-
-	created, err := conn.GmailService().Users.Labels.Create("me", label).Context(ctx).Do()
-	if err != nil {
-		return fmt.Errorf("failed to create label: %w", err)
-	}
-
-	if out.json {
-		return out.writeJSON(map[string]string{
-			"id":   created.Id,
-			"name": created.Name,
-		})
-	}
-
-	out.writeMessage(fmt.Sprintf("Label created: %s (ID: %s)", created.Name, created.Id))
-	return nil
-}
-
-// runLabelsDelete deletes a label
-func runLabelsDelete(ctx context.Context, conn *cmdg.CmdG, labelID string, force bool, out *outputWriter) error {
-	if !force {
-		return fmt.Errorf("--force flag must be set to true to delete a label")
-	}
-	// Resolve label name to ID
-	labels := conn.Labels()
-
-	resolvedID := labelID
-	for _, l := range labels {
-		if strings.EqualFold(l.Label, labelID) || l.ID == labelID {
-			resolvedID = l.ID
-			break
-		}
-	}
-
-	if err := conn.GmailService().Users.Labels.Delete("me", resolvedID).Context(ctx).Do(); err != nil {
-		return fmt.Errorf("failed to delete label: %w", err)
-	}
-
-	if out.json {
-		return out.writeJSON(map[string]string{"deleted": resolvedID})
-	}
-
-	out.writeMessage(fmt.Sprintf("Label deleted: %s", resolvedID))
-	return nil
-}
-
 // runLabelsApply applies a label to messages
-func runLabelsApply(ctx context.Context, conn *cmdg.CmdG, labelID, messageID string, stdin bool, verbose bool, out *outputWriter) error {
+func runLabelsApply(ctx context.Context, conn *gwcli.CmdG, labelID, messageID string, stdin bool, verbose bool, out *outputWriter) error {
 	var ids []string
 	var err error
 
@@ -150,11 +91,18 @@ func runLabelsApply(ctx context.Context, conn *cmdg.CmdG, labelID, messageID str
 	labels := conn.Labels()
 
 	resolvedID := labelID
+	found := false
 	for _, l := range labels {
 		if strings.EqualFold(l.Label, labelID) || l.ID == labelID {
 			resolvedID = l.ID
+			found = true
 			break
 		}
+	}
+
+	if !found {
+		fmt.Fprintf(os.Stderr, "Warning: label '%s' not found in config\n", labelID)
+		fmt.Fprintf(os.Stderr, "If you need to create labels, use gmailctl\n")
 	}
 
 	// Batch operation
@@ -179,7 +127,7 @@ func runLabelsApply(ctx context.Context, conn *cmdg.CmdG, labelID, messageID str
 }
 
 // runLabelsRemove removes a label from messages
-func runLabelsRemove(ctx context.Context, conn *cmdg.CmdG, labelID, messageID string, stdin bool, verbose bool, out *outputWriter) error {
+func runLabelsRemove(ctx context.Context, conn *gwcli.CmdG, labelID, messageID string, stdin bool, verbose bool, out *outputWriter) error {
 	var ids []string
 	var err error
 
@@ -199,11 +147,18 @@ func runLabelsRemove(ctx context.Context, conn *cmdg.CmdG, labelID, messageID st
 	labels := conn.Labels()
 
 	resolvedID := labelID
+	found := false
 	for _, l := range labels {
 		if strings.EqualFold(l.Label, labelID) || l.ID == labelID {
 			resolvedID = l.ID
+			found = true
 			break
 		}
+	}
+
+	if !found {
+		fmt.Fprintf(os.Stderr, "Warning: label '%s' not found in config\n", labelID)
+		fmt.Fprintf(os.Stderr, "If you need to create labels, use gmailctl\n")
 	}
 
 	// Batch operation
