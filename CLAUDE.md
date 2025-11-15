@@ -218,10 +218,11 @@ Required OAuth scopes:
 ### Label Management
 
 **Label Discovery:**
-gwcli reads label definitions from Jsonnet config files in this order:
-1. `~/.config/gwcli/config.jsonnet`
-2. `~/.gmailctl/config.jsonnet` (if gmailctl is installed)
-3. Gmail API (fallback)
+gwcli reads label definitions exclusively from:
+1. `~/.config/gwcli/config.jsonnet` (required - no API fallback)
+2. System labels (INBOX, TRASH, etc.) are automatically added
+
+If config.jsonnet is missing, gwcli will error with a helpful message pointing to gmailctl setup instructions.
 
 **Label Operations:**
 - `gwcli labels list` - List all labels
@@ -242,7 +243,25 @@ gmailctl edit
 
 ### gmailctl Integration
 
-gwcli is compatible with gmailctl's label definitions. If you use gmailctl for filter management, gwcli will automatically discover your labels.
+gwcli integrates with gmailctl for filter and label management. It includes wrapper commands that automatically inject the `--config` flag to use gwcli's config directory.
+
+**Wrapper Commands (in cmd/gwcli/gmailctl.go):**
+- `gwcli gmailctl download [-o file]` - Download filters from Gmail to config.jsonnet
+- `gwcli gmailctl apply [-y]` - Apply config.jsonnet to Gmail (with optional skip confirmation)
+- `gwcli gmailctl diff` - Show diff between local config and Gmail
+
+**Implementation Pattern:**
+All wrapper commands use subprocess execution:
+1. Check if gmailctl binary exists in PATH (`exec.LookPath("gmailctl")`)
+2. Build command with `--config` flag: `gmailctl --config ~/.config/gwcli <command> [args]`
+3. Execute using `exec.Command()` with stdin/stdout/stderr passthrough
+4. Return matching exit codes
+
+**Manual gmailctl Usage:**
+For advanced commands (edit, init, test, debug), users can run gmailctl directly:
+```bash
+gmailctl --config ~/.config/gwcli <command>
+```
 
 Example `~/.config/gwcli/config.jsonnet`:
 
@@ -254,6 +273,12 @@ Example `~/.config/gwcli/config.jsonnet`:
     { name: 'personal' },
     { name: 'receipts' },
   ],
+  rules: [
+    {
+      filter: { from: 'example.com' },
+      actions: { labels: ['work'] }
+    }
+  ]
 }
 ```
 

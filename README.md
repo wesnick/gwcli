@@ -125,6 +125,120 @@ gwcli stores configuration in `~/.config/gwcli/`:
 
 **Note:** gwcli uses gmailctl-compatible OAuth scopes and config format, so it can coexist with gmailctl installations.
 
+## gmailctl Integration
+
+gwcli integrates with [gmailctl](https://github.com/mbrt/gmailctl) for advanced filter and label management. gmailctl allows you to define Gmail filters and labels in a Jsonnet configuration file, which gwcli automatically uses for label definitions.
+
+### Configuration File
+
+gwcli reads label definitions from `~/.config/gwcli/config.jsonnet` (Jsonnet format, same as gmailctl). This file defines:
+- **Labels**: Custom labels you've created
+- **Rules**: Filter rules for automatic email processing (applied via gmailctl)
+
+Example `config.jsonnet`:
+
+```jsonnet
+{
+  version: "v1alpha3",
+  labels: [
+    { name: "work" },
+    { name: "personal" },
+    { name: "receipts" },
+  ],
+  rules: [
+    {
+      filter: { from: "example.com" },
+      actions: { labels: ["work"] }
+    }
+  ]
+}
+```
+
+### Using gmailctl Commands
+
+gwcli provides built-in wrappers for the most common gmailctl operations. These commands automatically use gwcli's config directory (`~/.config/gwcli`), so you don't need to specify `--config` flags.
+
+#### Download existing filters from Gmail
+
+```bash
+# Download current Gmail filters to config.jsonnet
+gwcli gmailctl download
+
+# Download to a specific file
+gwcli gmailctl download -o my-filters.jsonnet
+```
+
+#### Apply local config to Gmail
+
+```bash
+# Apply config.jsonnet to Gmail (with confirmation prompt)
+gwcli gmailctl apply
+
+# Apply without confirmation
+gwcli gmailctl apply -y
+```
+
+#### Show differences
+
+```bash
+# Show diff between local config and Gmail settings
+gwcli gmailctl diff
+```
+
+### Manual gmailctl Usage
+
+If you prefer to use gmailctl directly (or need access to advanced commands like `edit`, `init`, `test`), run gmailctl with the `--config` flag pointing to gwcli's config directory:
+
+```bash
+# Download filters
+gmailctl --config ~/.config/gwcli download
+
+# Edit config interactively
+gmailctl --config ~/.config/gwcli edit
+
+# Run config tests
+gmailctl --config ~/.config/gwcli test
+
+# Show annotated config
+gmailctl --config ~/.config/gwcli debug
+```
+
+### Installing gmailctl
+
+The gmailctl wrapper commands require gmailctl to be installed:
+
+```bash
+go install github.com/mbrt/gmailctl/cmd/gmailctl@latest
+```
+
+After installation, verify it's available:
+
+```bash
+gmailctl version
+```
+
+### Workflow Example
+
+Typical workflow for managing labels and filters:
+
+```bash
+# 1. Download your current Gmail filters
+gwcli gmailctl download
+
+# 2. Edit config.jsonnet in your favorite editor
+vim ~/.config/gwcli/config.jsonnet
+
+# 3. Preview changes before applying
+gwcli gmailctl diff
+
+# 4. Apply the changes to Gmail
+gwcli gmailctl apply
+
+# 5. Use the labels in gwcli
+gwcli messages list --label work
+gwcli labels list
+```
+
 ## Usage Examples
 
 ### Reading Messages

@@ -8,7 +8,7 @@ import (
 )
 
 // getConnection creates a CmdG connection with authentication
-func getConnection(configDir string) (*gwcli.CmdG, error) {
+func getConnection(configDir string, verbose bool) (*gwcli.CmdG, error) {
 	conn, err := gwcli.New(configDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create connection: %w", err)
@@ -16,7 +16,7 @@ func getConnection(configDir string) (*gwcli.CmdG, error) {
 
 	// Load labels so they're available for label-based operations
 	ctx := context.Background()
-	if err := conn.LoadLabels(ctx); err != nil {
+	if err := conn.LoadLabels(ctx, verbose); err != nil {
 		return nil, fmt.Errorf("failed to load labels: %w", err)
 	}
 

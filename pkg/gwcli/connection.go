@@ -20,6 +20,7 @@ import (
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"github.com/wesnick/gwcli/pkg/gwcli/gmailctl"
 	"golang.org/x/oauth2"
 	drive "google.golang.org/api/drive/v3"
 	gmail "google.golang.org/api/gmail/v1"
@@ -86,6 +87,7 @@ type CmdG struct {
 	labelCache   map[string]*Label
 	contacts     []string
 	settings     Settings
+	configPaths  *ConfigPaths
 }
 
 func userAgent() string {
@@ -151,6 +153,9 @@ func New(configDir string) (*CmdG, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Store config paths for later use (e.g., loading labels from config.jsonnet)
+	conn.configPaths = paths
 
 	// Initialize Gmail service using gmailctl authentication
 	ctx := context.Background()
@@ -285,28 +290,82 @@ func logRPC(st time.Time, err error, s string, args ...interface{}) {
 	}
 }
 
-// LoadLabels batch loads all labels into the cache.
-func (c *CmdG) LoadLabels(ctx context.Context) error {
-	// Load initial labels.
+// LoadLabels batch loads all labels into the cache from config.jsonnet.
+func (c *CmdG) LoadLabels(ctx context.Context, verbose bool) error {
 	st := time.Now()
-	var res *gmail.ListLabelsResponse
-	err := wrapLogRPC("gmail.Users.Labels.List", func() (err error) {
-		res, err = c.gmail.Users.Labels.List(email).Context(ctx).Do()
-		return
-	}, "email=%q", email)
-	if err != nil {
-		return err
+
+	// Read labels from config.jsonnet (required - no API fallback)
+	configPath := c.configPaths.Config
+	if verbose {
+		log.Infof("Loading labels from config file: %s", configPath)
 	}
-	log.Infof("Loaded labels in %v", time.Since(st))
+
+	cfg, err := gmailctl.ReadFile(configPath, "")
+	if err != nil {
+		if err == gmailctl.ErrNotFound {
+			return fmt.Errorf("config.jsonnet not found at %s: gmailctl integration requires this file. See https://github.com/mbrt/gmailctl for setup instructions", configPath)
+		}
+		return fmt.Errorf("failed to read config.jsonnet: %w", err)
+	}
+
+	if verbose {
+		log.Infof("Successfully parsed config.jsonnet (version: %s)", cfg.Version)
+	}
+
 	c.m.Lock()
 	defer c.m.Unlock()
-	for _, l := range res.Labels {
-		c.labelCache[l.Id] = &Label{
-			ID:       l.Id,
-			Label:    l.Name,
-			Response: l,
+
+	// Add system labels first (Gmail built-ins that should always be available)
+	systemLabels := map[string]string{
+		"INBOX":               "INBOX",
+		"TRASH":               "Trash",
+		"UNREAD":              "UNREAD",
+		"STARRED":             "Starred",
+		"SENT":                "SENT",
+		"DRAFT":               "DRAFT",
+		"SPAM":                "SPAM",
+		"IMPORTANT":           "IMPORTANT",
+		"CATEGORY_PERSONAL":   "Personal",
+		"CATEGORY_SOCIAL":     "Social",
+		"CATEGORY_PROMOTIONS": "Promotions",
+		"CATEGORY_UPDATES":    "Updates",
+		"CATEGORY_FORUMS":     "Forums",
+	}
+
+	for id, name := range systemLabels {
+		c.labelCache[id] = &Label{
+			ID:    id,
+			Label: name,
+			Response: &gmail.Label{
+				Id:   id,
+				Name: name,
+				Type: "system",
+			},
 		}
 	}
+
+	// Add labels from config.jsonnet
+	for _, l := range cfg.Labels {
+		// Use the label name as the ID for user-defined labels
+		// This makes label resolution work seamlessly
+		c.labelCache[l.Name] = &Label{
+			ID:    l.Name,
+			Label: l.Name,
+			Response: &gmail.Label{
+				Id:   l.Name,
+				Name: l.Name,
+				Type: "user",
+			},
+		}
+	}
+
+	if verbose {
+		log.Infof("Loaded %d labels (%d from config.jsonnet, %d system labels) in %v",
+			len(c.labelCache), len(cfg.Labels), len(systemLabels), time.Since(st))
+	} else {
+		log.Infof("Loaded %d labels in %v", len(c.labelCache), time.Since(st))
+	}
+
 	return nil
 }
 

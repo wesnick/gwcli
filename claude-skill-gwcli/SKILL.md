@@ -11,11 +11,12 @@ This skill provides comprehensive guidance for using gwcli, a command-line Gmail
 
 ## Core Capabilities
 
-gwcli provides three main resource types:
+gwcli provides four main resource types:
 
 1. **Messages** - Read, send, search, delete, mark read/unread, and move emails
-2. **Labels** - List, create, delete, apply, and remove Gmail labels
+2. **Labels** - List labels, apply/remove labels to messages (creation via gmailctl)
 3. **Attachments** - List and download email attachments
+4. **Gmailctl** - Manage filters and labels via gmailctl integration (download, apply, diff)
 
 ## When to Use This Skill
 
@@ -37,7 +38,14 @@ Before using gwcli, configure OAuth authentication:
 gwcli configure
 ```
 
-This opens a browser for Google OAuth and saves credentials to `~/.cmdg/cmdg.conf`. The tool shares authentication with cmdg TUI if already configured.
+This opens a browser for Google OAuth and saves credentials to `~/.config/gwcli/`.
+
+**Required configuration files:**
+- `~/.config/gwcli/credentials.json` - OAuth credentials from Google Console
+- `~/.config/gwcli/token.json` - Auto-generated access token
+- `~/.config/gwcli/config.jsonnet` - **Required** label definitions (gmailctl format)
+
+**Important:** gwcli requires `config.jsonnet` to load label definitions. If missing, commands will fail with an error. See the gmailctl Integration section below for setup.
 
 ### Basic Command Pattern
 
@@ -50,8 +58,92 @@ gwcli <resource> <action> [arguments] [flags]
 **Example:**
 ```bash
 gwcli messages list --unread-only
-gwcli labels create "Work/Projects"
+gwcli labels list
 gwcli attachments download <message-id>
+```
+
+### gmailctl Integration
+
+gwcli integrates with [gmailctl](https://github.com/mbrt/gmailctl) for label and filter management. Labels are defined in `~/.config/gwcli/config.jsonnet` using gmailctl's Jsonnet format.
+
+**Setup config.jsonnet:**
+
+1. Install gmailctl:
+```bash
+go install github.com/mbrt/gmailctl/cmd/gmailctl@latest
+```
+
+2. Download existing Gmail filters (creates config.jsonnet):
+```bash
+gwcli gmailctl download
+```
+
+3. Or create manually:
+```bash
+cat > ~/.config/gwcli/config.jsonnet << 'EOF'
+{
+  version: "v1alpha3",
+  labels: [
+    { name: "work" },
+    { name: "personal" },
+    { name: "receipts" },
+  ],
+  rules: []
+}
+EOF
+```
+
+**gwcli gmailctl wrapper commands:**
+
+These automatically use `~/.config/gwcli` directory (no need for `--config` flag):
+
+```bash
+# Download existing filters from Gmail
+gwcli gmailctl download
+
+# Preview changes before applying
+gwcli gmailctl diff
+
+# Apply config.jsonnet to Gmail (creates filters)
+gwcli gmailctl apply
+
+# Apply without confirmation
+gwcli gmailctl apply -y
+```
+
+**Manual gmailctl usage:**
+
+For advanced commands (init, edit, test, debug), use gmailctl directly:
+
+```bash
+# Edit config interactively
+gmailctl --config ~/.config/gwcli edit
+
+# Run tests
+gmailctl --config ~/.config/gwcli test
+
+# Show annotated config
+gmailctl --config ~/.config/gwcli debug
+```
+
+**Typical workflow:**
+
+```bash
+# 1. Download current Gmail setup
+gwcli gmailctl download
+
+# 2. Edit config.jsonnet to add labels/rules
+vim ~/.config/gwcli/config.jsonnet
+
+# 3. Preview changes
+gwcli gmailctl diff
+
+# 4. Apply to Gmail
+gwcli gmailctl apply
+
+# 5. Use labels in gwcli
+gwcli labels list
+gwcli messages list --label work
 ```
 
 ## Common Workflows
@@ -181,7 +273,7 @@ gwcli messages list --unread-only --json | \
 
 **List labels:**
 ```bash
-# All labels
+# All labels (loaded from config.jsonnet + system labels)
 gwcli labels list
 
 # User-created only
@@ -194,19 +286,40 @@ gwcli labels list --system
 gwcli labels list --json
 ```
 
-**Create labels:**
+**Create/delete labels:**
+
+Labels are managed via `config.jsonnet`, not directly by gwcli. To add labels:
+
+1. Edit config.jsonnet:
 ```bash
-# Simple label
-gwcli labels create "Important"
-
-# Nested label (uses / separator)
-gwcli labels create "Work/Projects/Q4-2025"
-
-# With color
-gwcli labels create "Urgent" --color "#ff0000"
+vim ~/.config/gwcli/config.jsonnet
 ```
 
-**Apply/remove labels:**
+2. Add labels to the labels array:
+```jsonnet
+{
+  version: "v1alpha3",
+  labels: [
+    { name: "work" },
+    { name: "personal" },
+    { name: "work/projects" },     // Nested label
+    { name: "urgent" },
+  ],
+  rules: []
+}
+```
+
+3. Apply to Gmail:
+```bash
+gwcli gmailctl apply
+```
+
+Or use gmailctl's interactive editor:
+```bash
+gmailctl --config ~/.config/gwcli edit
+```
+
+**Apply/remove labels to messages:**
 ```bash
 # Apply to single message
 gwcli labels apply "Important" --message <message-id>
@@ -218,12 +331,6 @@ gwcli labels remove "Spam" --message <message-id>
 gwcli messages search "subject:invoice has:attachment" --json | \
   jq -r '.[].id' | \
   gwcli labels apply "Invoices" --stdin
-```
-
-**Delete labels:**
-```bash
-# Requires --force flag for safety
-gwcli labels delete "Old Project" --force
 ```
 
 ### Attachment Operations
@@ -280,9 +387,9 @@ gwcli messages list --label "Invoices" --json | \
 
 Available on all commands:
 
-- `--config <path>` - Config file path (default: ~/.cmdg/cmdg.conf)
+- `--config <path>` - Config directory path (default: ~/.config/gwcli)
 - `--json` - Output in JSON format for programmatic processing
-- `--verbose` - Enable verbose logging for troubleshooting
+- `--verbose` - Enable verbose logging (shows which config.jsonnet is loaded)
 - `--no-color` - Disable colored output
 
 ## Important Behaviors
@@ -450,18 +557,31 @@ echo "Downloaded to: $OUTPUT_DIR"
 
 Apply labels based on sender domain:
 
+**Note:** Labels must be defined in `~/.config/gwcli/config.jsonnet` first. Add them to the labels array:
+
+```jsonnet
+{
+  version: "v1alpha3",
+  labels: [
+    { name: "Emails/company.com" },
+    { name: "Emails/partner.org" },
+    { name: "Emails/client.net" },
+  ],
+  rules: []
+}
+```
+
+Then apply the config and run the labeling script:
+
 ```bash
 #!/bin/bash
 # auto-label-by-domain.sh
 
-# Get company domains from config
+# Labels must exist in config.jsonnet before running this script
 DOMAINS=("company.com" "partner.org" "client.net")
 
 for domain in "${DOMAINS[@]}"; do
   label="Emails/${domain}"
-
-  # Create label if it doesn't exist
-  gwcli labels create "$label" 2>/dev/null || true
 
   # Apply to recent emails from domain
   gwcli messages search "from:@${domain} newer_than:7d" --json | \
@@ -558,13 +678,15 @@ These scripts can be:
 When helping users with gwcli:
 
 1. **Always check authentication first** - Ensure `gwcli configure` has been run
-2. **Use JSON for automation** - Add `--json` flag when building pipelines
-3. **Include safety flags** - Remind users about `--force` for destructive operations
-4. **Leverage stdin for batches** - Use `--stdin` pattern for processing multiple messages
-5. **Provide complete commands** - Include all necessary flags in examples
-6. **Test incrementally** - Suggest testing commands on small datasets first
-7. **Handle errors gracefully** - Include error checking in automation scripts
-8. **Use verbose mode for debugging** - Add `--verbose` when troubleshooting
+2. **Ensure config.jsonnet exists** - gwcli requires `~/.config/gwcli/config.jsonnet` for label definitions. Use `gwcli gmailctl download` to create it if missing
+3. **Use JSON for automation** - Add `--json` flag when building pipelines
+4. **Include safety flags** - Remind users about `--force` for destructive operations
+5. **Leverage stdin for batches** - Use `--stdin` pattern for processing multiple messages
+6. **Provide complete commands** - Include all necessary flags in examples
+7. **Test incrementally** - Suggest testing commands on small datasets first
+8. **Handle errors gracefully** - Include error checking in automation scripts
+9. **Use verbose mode for debugging** - Add `--verbose` when troubleshooting (shows which config.jsonnet is loaded)
+10. **Manage labels via gmailctl** - Labels are created/deleted in config.jsonnet, not via gwcli commands
 
 ## Common User Requests
 
