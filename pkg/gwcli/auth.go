@@ -50,31 +50,68 @@ func GetConfigPaths(configDir string) (*ConfigPaths, error) {
 	}, nil
 }
 
-// InitializeAuth creates the authenticator and service
-func InitializeAuth(ctx context.Context, paths *ConfigPaths) (*gmail.Service, error) {
+// InitializeAuth creates the authenticator and service.
+// userEmail is only required when using service account authentication.
+func InitializeAuth(ctx context.Context, paths *ConfigPaths, userEmail string) (*gmail.Service, error) {
 	// Check if credentials exist
 	credFile, err := os.Open(paths.Credentials)
 	if err != nil {
 		return nil, fmt.Errorf(`credentials not found at %s
 
 To set up authentication:
+
+For OAuth (regular Gmail accounts):
 1. Go to https://console.developers.google.com
 2. Create a new project (or select existing)
 3. Enable Gmail API
 4. Create OAuth 2.0 Client ID (Desktop app)
 5. Download the credentials JSON file
 6. Save it to: %s
-7. Run 'gwcli configure' again
+7. Run 'gwcli configure' to authorize
+
+For Service Accounts (Google Workspace):
+1. Go to https://console.developers.google.com
+2. Create a new project (or select existing)
+3. Enable Gmail API
+4. Create Service Account with domain-wide delegation
+5. Download the credentials JSON file
+6. Save it to: %s
+7. Use --user flag to specify which user to impersonate
 
 Scopes needed:
 - https://www.googleapis.com/auth/gmail.modify
 - https://www.googleapis.com/auth/gmail.settings.basic
 - https://www.googleapis.com/auth/gmail.labels
-`, paths.Credentials, paths.Credentials)
+`, paths.Credentials, paths.Credentials, paths.Credentials)
 	}
 	defer credFile.Close()
 
-	// Create authenticator
+	// Detect if this is a service account
+	isServiceAcct, err := gmailctl.IsServiceAccount(credFile)
+	if err != nil {
+		return nil, fmt.Errorf("detecting credential type: %w", err)
+	}
+
+	// Reset file pointer after reading for detection
+	if _, err := credFile.Seek(0, 0); err != nil {
+		return nil, fmt.Errorf("resetting credentials file: %w", err)
+	}
+
+	// Use service account authentication
+	if isServiceAcct {
+		if userEmail == "" {
+			return nil, fmt.Errorf("service account authentication requires --user flag to specify which user to impersonate")
+		}
+
+		auth, err := gmailctl.NewServiceAccountAuthenticator(credFile, userEmail)
+		if err != nil {
+			return nil, fmt.Errorf("creating service account authenticator: %w", err)
+		}
+
+		return auth.Service(ctx)
+	}
+
+	// Use OAuth authentication
 	auth, err := gmailctl.NewAuthenticator(credFile)
 	if err != nil {
 		return nil, fmt.Errorf("creating authenticator: %w", err)

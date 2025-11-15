@@ -12,6 +12,7 @@ var version = "dev"
 
 type CLI struct {
 	Config  string `help:"Config directory path" default:"~/.config/gwcli" type:"path"`
+	User    string `help:"User email for service account impersonation (required for service accounts)"`
 	JSON    bool   `help:"JSON output format"`
 	Verbose bool   `help:"Verbose logging"`
 	NoColor bool   `help:"Disable colored output"`
@@ -145,7 +146,7 @@ func main() {
 
 	case "auth token-info":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config, cli.Verbose)
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -158,7 +159,7 @@ func main() {
 
 	case "messages list":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config, cli.Verbose)
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -171,7 +172,7 @@ func main() {
 
 	case "messages read <message-id>":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config, cli.Verbose)
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -184,7 +185,7 @@ func main() {
 
 	case "messages search <query>":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config, cli.Verbose)
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -197,7 +198,7 @@ func main() {
 
 	case "messages send":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config, cli.Verbose)
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -212,7 +213,7 @@ func main() {
 
 	case "messages delete":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config, cli.Verbose)
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -225,7 +226,7 @@ func main() {
 
 	case "messages mark-read":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config, cli.Verbose)
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -238,7 +239,7 @@ func main() {
 
 	case "messages mark-unread":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config, cli.Verbose)
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -251,7 +252,7 @@ func main() {
 
 	case "messages move":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config, cli.Verbose)
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -264,7 +265,7 @@ func main() {
 
 	case "labels list":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config, cli.Verbose)
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -277,7 +278,7 @@ func main() {
 
 	case "labels apply":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config, cli.Verbose)
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -290,7 +291,7 @@ func main() {
 
 	case "labels remove":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config, cli.Verbose)
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -303,7 +304,7 @@ func main() {
 
 	case "attachments list <message-id>":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config, cli.Verbose)
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
@@ -316,7 +317,7 @@ func main() {
 
 	case "attachments download <message-id>":
 		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config, cli.Verbose)
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)

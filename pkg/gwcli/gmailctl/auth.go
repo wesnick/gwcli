@@ -96,3 +96,66 @@ func generateOauthState() string {
 	state := base64.URLEncoding.EncodeToString(b)
 	return state
 }
+
+// ServiceAccountAuthenticator encapsulates service account authentication for Gmail APIs.
+// Service accounts are used for Google Workspace domain-wide delegation.
+type ServiceAccountAuthenticator struct {
+	credBytes []byte
+	userEmail string
+}
+
+// NewServiceAccountAuthenticator creates a ServiceAccountAuthenticator from credentials JSON.
+// The userEmail parameter specifies which user the service account should impersonate.
+func NewServiceAccountAuthenticator(credentials io.Reader, userEmail string) (*ServiceAccountAuthenticator, error) {
+	credBytes, err := io.ReadAll(credentials)
+	if err != nil {
+		return nil, fmt.Errorf("reading service account credentials: %w", err)
+	}
+
+	if userEmail == "" {
+		return nil, fmt.Errorf("user email is required for service account authentication")
+	}
+
+	return &ServiceAccountAuthenticator{
+		credBytes: credBytes,
+		userEmail: userEmail,
+	}, nil
+}
+
+// Service creates a Gmail API service using service account credentials.
+// The service account must have domain-wide delegation enabled and the necessary scopes authorized.
+func (a *ServiceAccountAuthenticator) Service(ctx context.Context) (*gmail.Service, error) {
+	config, err := google.JWTConfigFromJSON(
+		a.credBytes,
+		gmail.GmailModifyScope,
+		gmail.GmailSettingsBasicScope,
+		gmail.GmailLabelsScope,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("parsing service account credentials: %w", err)
+	}
+
+	// Set the user to impersonate
+	config.Subject = a.userEmail
+
+	// Create the Gmail service with the service account credentials
+	return gmail.NewService(ctx, option.WithTokenSource(config.TokenSource(ctx)))
+}
+
+// IsServiceAccount detects if the credentials JSON is for a service account.
+func IsServiceAccount(credentials io.Reader) (bool, error) {
+	credBytes, err := io.ReadAll(credentials)
+	if err != nil {
+		return false, fmt.Errorf("reading credentials: %w", err)
+	}
+
+	var credType struct {
+		Type string `json:"type"`
+	}
+
+	if err := json.Unmarshal(credBytes, &credType); err != nil {
+		return false, fmt.Errorf("parsing credentials: %w", err)
+	}
+
+	return credType.Type == "service_account", nil
+}
