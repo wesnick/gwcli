@@ -187,10 +187,10 @@ type messageReadOutput struct {
 }
 
 type attachmentInfo struct {
-	Filename     string `json:"filename"`
-	MimeType     string `json:"mimeType"`
-	Size         int64  `json:"size"`
-	AttachmentID string `json:"attachmentId"`
+	Index    int    `json:"index"`
+	Filename string `json:"filename"`
+	MimeType string `json:"mimeType"`
+	Size     int64  `json:"size"`
 }
 
 // extractRawHTML extracts the raw HTML body from a message without rendering it with lynx
@@ -276,6 +276,12 @@ func extractAttachmentsInfo(ctx context.Context, conn *gwcli.CmdG, messageID str
 
 	var attachments []attachmentInfo
 	extractAttachmentsFromPart(msg.Payload, &attachments)
+
+	// Set indices
+	for i := range attachments {
+		attachments[i].Index = i
+	}
+
 	return attachments, nil
 }
 
@@ -288,10 +294,9 @@ func extractAttachmentsFromPart(part *gmail.MessagePart, attachments *[]attachme
 	// Check if this part is an attachment
 	if part.Filename != "" && part.Body != nil {
 		*attachments = append(*attachments, attachmentInfo{
-			Filename:     part.Filename,
-			MimeType:     part.MimeType,
-			Size:         part.Body.Size,
-			AttachmentID: part.Body.AttachmentId,
+			Filename: part.Filename,
+			MimeType: part.MimeType,
+			Size:     part.Body.Size,
 		})
 	}
 
@@ -551,10 +556,10 @@ func runMessagesRead(ctx context.Context, conn *gwcli.CmdG, messageID string, ra
 	if err == nil && len(attachmentsInfo) > 0 {
 		for _, att := range attachmentsInfo {
 			attachmentsMeta = append(attachmentsMeta, AttachmentMeta{
-				Filename:     att.Filename,
-				AttachmentID: att.AttachmentID,
-				MimeType:     att.MimeType,
-				Size:         att.Size,
+				Index:    att.Index,
+				Filename: att.Filename,
+				MimeType: att.MimeType,
+				Size:     att.Size,
 			})
 		}
 	}

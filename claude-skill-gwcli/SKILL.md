@@ -230,23 +230,42 @@ gwcli labels delete "Old Project" --force
 
 **List attachments:**
 ```bash
+# List with index numbers for easy selection
 gwcli attachments list <message-id>
+
+# JSON output includes index field
 gwcli attachments list <message-id> --json
 ```
 
 **Download attachments:**
 ```bash
-# Download all attachments to current directory
+# Download all attachments (defaults to ~/Downloads)
 gwcli attachments download <message-id>
+
+# Download specific attachment by index (0-based)
+gwcli attachments download <message-id> --index 0
+gwcli attachments download <message-id> -i 0
+
+# Download multiple attachments (comma-separated or multiple flags)
+gwcli attachments download <message-id> --index 0,1,2
+gwcli attachments download <message-id> -i 0 -i 1 -i 2
+
+# Download by filename pattern (glob matching)
+gwcli attachments download <message-id> --filename "*.pdf"
+gwcli attachments download <message-id> -f "invoice*.xlsx"
 
 # Download to specific directory
 gwcli attachments download <message-id> --output-dir ./downloads
 
-# Download specific attachment
-gwcli attachments download <message-id> \
-  --attachment-id <att-id> \
-  --output report.pdf
+# Download single attachment to specific file
+gwcli attachments download <message-id> --index 0 --output report.pdf
 ```
+
+**Important notes:**
+- Attachments are indexed starting at 0 (shown in `messages read` and `attachments list`)
+- Default download location is `~/Downloads` (created if doesn't exist)
+- Filename conflicts are automatically resolved with ` (n)` suffix (e.g., `file.pdf` → `file (1).pdf`)
+- Use `--index` or `--filename` for reliable selection (NOT attachment IDs, which change between API calls)
 
 **Download all attachments from label:**
 ```bash
@@ -416,12 +435,11 @@ Extract and organize attachments:
 LABEL="Invoices"
 OUTPUT_DIR="./invoices/$(date +%Y-%m)"
 
-mkdir -p "$OUTPUT_DIR"
-
 gwcli messages list --label "$LABEL" --json | \
   jq -r '.[].id' | \
   while read id; do
     echo "Processing message: $id"
+    # Downloads all attachments to OUTPUT_DIR with automatic conflict resolution
     gwcli attachments download "$id" --output-dir "$OUTPUT_DIR"
   done
 
@@ -566,10 +584,12 @@ gwcli messages search "from:unwanted@spam.com" --json | \
 
 ### "Download all PDF attachments"
 ```bash
+# Search for messages with PDF attachments and download them
 gwcli messages search "has:attachment filename:pdf" --json | \
   jq -r '.[].id' | \
   while read id; do
-    gwcli attachments download "$id" --output-dir ./pdfs
+    # Use --filename pattern to download only PDFs from each message
+    gwcli attachments download "$id" --filename "*.pdf" --output-dir ./pdfs
   done
 ```
 
@@ -592,14 +612,21 @@ gwcli messages send \
 
 ### "Find and extract invoices"
 ```bash
-# Search for invoice emails
+# Search for invoice emails with attachments
 gwcli messages search "subject:invoice has:attachment" --json | \
   jq -r '.[].id' | \
   while read id; do
-    # Download attachments
+    # Download all attachments (defaults to ~/Downloads)
     gwcli attachments download "$id" --output-dir ./invoices
 
     # Label for tracking
     echo "$id" | gwcli labels apply "Processed" --stdin
+  done
+
+# Alternative: Download only PDF invoices
+gwcli messages search "subject:invoice has:attachment" --json | \
+  jq -r '.[].id' | \
+  while read id; do
+    gwcli attachments download "$id" --filename "*.pdf" --output-dir ./invoices
   done
 ```

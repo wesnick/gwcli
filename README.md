@@ -77,34 +77,53 @@ sudo cp gwcli /usr/local/bin
 
 ## Configuring
 
-You need to configure `gwcli` to provide OAuth2 authentication to Gmail:
+gwcli uses OAuth2 for authentication. Follow these steps to set up:
+
+### Step 1: Create OAuth Credentials
 
 1. Go to the [Google Developers Console](https://console.developers.google.com/apis)
-2. Select an existing project or create a new project
-3. Enable the Gmail API:
-   - Gmail API: `https://console.developers.google.com/apis/api/gmail.googleapis.com/overview`
-4. Navigate to "OAuth consent screen" and fill it out
-5. Add scopes (or manually add these URLs):
-   - `https://www.googleapis.com/auth/gmail.modify`
-   - `https://www.googleapis.com/auth/gmail.settings.basic`
-   - `https://www.googleapis.com/auth/gmail.labels`
-6. Navigate to "Credentials" page
-7. Click "+ CREATE CREDENTIALS"
-8. Select "OAuth client ID"
-9. Set "Application type" to "Desktop app"
-10. Click "CREATE" and copy the Client ID and Client Secret
+2. Create a new project (or select an existing one)
+3. Enable the **Gmail API**:
+   - Visit `https://console.developers.google.com/apis/api/gmail.googleapis.com/overview`
+4. Configure the **OAuth consent screen**:
+   - Add your email as a test user
+   - Add these scopes:
+     - `https://www.googleapis.com/auth/gmail.modify`
+     - `https://www.googleapis.com/auth/gmail.settings.basic`
+     - `https://www.googleapis.com/auth/gmail.labels`
+5. Create **OAuth 2.0 Client ID**:
+   - Navigate to "Credentials" page
+   - Click "+ CREATE CREDENTIALS" → "OAuth client ID"
+   - Select "Desktop app" as application type
+   - Click "CREATE"
+6. **Download the credentials**:
+   - Click the download button (⬇) next to your newly created OAuth client
+   - Save the file as `~/.config/gwcli/credentials.json`
 
-Then run:
+### Step 2: Authorize gwcli
+
+Run the configuration command:
 
 ```bash
 gwcli configure
-# Enter Client ID and Client Secret when prompted
-# Follow the browser authentication flow
 ```
 
-This creates `~/.config/gwcli/` directory with OAuth credentials.
+This will:
+1. Check for `credentials.json` in `~/.config/gwcli/`
+2. Display a Google authorization URL
+3. Ask you to paste the authorization code
+4. Save the access token to `~/.config/gwcli/token.json`
 
-**Note:** gwcli uses gmailctl-compatible OAuth scopes, so it can coexist with gmailctl installations and share label definitions.
+After this, you can use all gwcli commands.
+
+### Configuration Files
+
+gwcli stores configuration in `~/.config/gwcli/`:
+- `credentials.json` - OAuth client credentials (you provide this)
+- `token.json` - OAuth access/refresh tokens (auto-generated)
+- `config.jsonnet` - Optional label definitions (gmailctl format)
+
+**Note:** gwcli uses gmailctl-compatible OAuth scopes and config format, so it can coexist with gmailctl installations.
 
 ## Usage Examples
 
@@ -180,18 +199,31 @@ echo "msg1\nmsg2\nmsg3" | gwcli labels apply "Archive" --stdin
 ### Attachments
 
 ```bash
-# List attachments in a message
+# List attachments in a message (shows index for easy selection)
 gwcli attachments list <message-id>
 
-# Download all attachments
+# Download all attachments (defaults to ~/Downloads)
 gwcli attachments download <message-id>
 
-# Download specific attachment
-gwcli attachments download <message-id> --attachment-id <att-id>
+# Download specific attachment by index
+gwcli attachments download <message-id> --index 0
 
-# Download to specific file
-gwcli attachments download <message-id> --output myfile.pdf
+# Download multiple attachments
+gwcli attachments download <message-id> --index 0,1,2
+gwcli attachments download <message-id> -i 0 -i 1
+
+# Download by filename pattern (glob)
+gwcli attachments download <message-id> --filename "*.pdf"
+gwcli attachments download <message-id> -f "invoice*.xlsx"
+
+# Download to specific directory
+gwcli attachments download <message-id> --output-dir ./attachments
+
+# Download single attachment to specific file
+gwcli attachments download <message-id> --index 0 --output myfile.pdf
 ```
+
+**Note:** Attachments are automatically numbered (index: 0, 1, 2...) when viewing messages. Use the index for reliable selection. Filename conflicts are handled automatically with ` (n)` suffix.
 
 ### Batch Operations
 

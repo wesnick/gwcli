@@ -20,11 +20,9 @@ import (
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/net/proxy"
 	"golang.org/x/oauth2"
 	drive "google.golang.org/api/drive/v3"
 	gmail "google.golang.org/api/gmail/v1"
-	"google.golang.org/api/googleapi/transport"
 	people "google.golang.org/api/people/v1"
 )
 
@@ -140,75 +138,106 @@ func readConf(fn string) (Config, error) {
 	return conf, nil
 }
 
-// New creates a new CmdG.
-func New(fn string) (*CmdG, error) {
+// New creates a new CmdG with gmailctl-style authentication.
+// configDir should point to the directory containing credentials.json and token.json
+func New(configDir string) (*CmdG, error) {
 	conn := &CmdG{
 		messageCache: make(map[string]*Message),
 		labelCache:   make(map[string]*Label),
 	}
 
-	// Read config.
-	conf, err := readConf(fn)
+	// Get config paths
+	paths, err := GetConfigPaths(configDir)
 	if err != nil {
 		return nil, err
 	}
 
-	var tp http.RoundTripper
-
-	// Set up SOCKS5 proxy.
-	if *socks5 != "" {
-		dialer, err := proxy.SOCKS5("tcp", *socks5, nil, proxy.Direct)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to connect to socks5 proxy %q", *socks5)
-		}
-		if cd, ok := dialer.(proxy.ContextDialer); ok {
-			tp = &http.Transport{
-				DialContext: cd.DialContext,
-			}
-		} else {
-			tp = &http.Transport{
-				Dial: dialer.Dial,
-			}
-		}
+	// Initialize Gmail service using gmailctl authentication
+	ctx := context.Background()
+	gmailSvc, err := InitializeAuth(ctx, paths)
+	if err != nil {
+		return nil, err
 	}
 
-	// Attach APIkey, if any.
-	if conf.OAuth.APIKey != "" {
-		newtp := &transport.APIKey{
-			Key:       conf.OAuth.APIKey,
-			Transport: tp,
-		}
-		tp = newtp
+	// Store the gmail service
+	conn.gmail = gmailSvc
+
+	// Get authenticated HTTP client for Drive and People APIs
+	tokenFile, err := os.Open(paths.Token)
+	if err != nil {
+		return nil, errors.Wrapf(err, "opening token")
+	}
+	defer tokenFile.Close()
+
+	tokBytes, err := ioutil.ReadAll(tokenFile)
+	if err != nil {
+		return nil, errors.Wrapf(err, "reading token")
 	}
 
-	// Set up google http.Client.
-	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, &http.Client{
-		Transport: tp,
-	})
-
-	// Connect.
-	{
-		token := &oauth2.Token{
-			AccessToken:  conf.OAuth.AccessToken,
-			RefreshToken: conf.OAuth.RefreshToken,
-		}
-		cfg := oauth2.Config{
-			ClientID:     conf.OAuth.ClientID,
-			ClientSecret: conf.OAuth.ClientSecret,
-			Endpoint: oauth2.Endpoint{
-				AuthURL:  "https://accounts.google.com/o/oauth2/auth",
-				TokenURL: "https://accounts.google.com/o/oauth2/token",
-			},
-			Scopes: []string{scope},
-
-			// TODO: This method doesn't work anymore, so
-			// why is this code still here?
-			//
-			// RedirectURL: oauthRedirectOffline,
-		}
-		conn.authedClient = cfg.Client(ctx, token)
+	var tok oauth2.Token
+	if err := json.Unmarshal(tokBytes, &tok); err != nil {
+		return nil, errors.Wrapf(err, "parsing token")
 	}
+
+	// Get OAuth config to create HTTP client
+	cfg, err := getOAuthConfig(paths.Credentials)
+	if err != nil {
+		return nil, err
+	}
+
+	conn.authedClient = cfg.Client(ctx, &tok)
+
+	// Set up Drive and People services (note: gwcli doesn't actively use these,
+	// but keeping them for compatibility with old cmdg code)
 	return conn, conn.setupClients()
+}
+
+// getOAuthConfig creates an OAuth2 config from credentials file
+func getOAuthConfig(credPath string) (*oauth2.Config, error) {
+	credFile, err := os.Open(credPath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "opening credentials")
+	}
+	defer credFile.Close()
+
+	credBytes, err := ioutil.ReadAll(credFile)
+	if err != nil {
+		return nil, errors.Wrapf(err, "reading credentials")
+	}
+
+	return oauth2Config(credBytes)
+}
+
+// oauth2Config creates OAuth2 config from credential bytes
+func oauth2Config(credBytes []byte) (*oauth2.Config, error) {
+	type creds struct {
+		Installed struct {
+			ClientID     string   `json:"client_id"`
+			ClientSecret string   `json:"client_secret"`
+			RedirectURIs []string `json:"redirect_uris"`
+			AuthURI      string   `json:"auth_uri"`
+			TokenURI     string   `json:"token_uri"`
+		} `json:"installed"`
+	}
+
+	var c creds
+	if err := json.Unmarshal(credBytes, &c); err != nil {
+		return nil, errors.Wrapf(err, "parsing credentials")
+	}
+
+	return &oauth2.Config{
+		ClientID:     c.Installed.ClientID,
+		ClientSecret: c.Installed.ClientSecret,
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  c.Installed.AuthURI,
+			TokenURL: c.Installed.TokenURI,
+		},
+		Scopes: []string{
+			"https://www.googleapis.com/auth/gmail.modify",
+			"https://www.googleapis.com/auth/gmail.settings.basic",
+			"https://www.googleapis.com/auth/gmail.labels",
+		},
+	}, nil
 }
 
 func (c *CmdG) setupClients() error {

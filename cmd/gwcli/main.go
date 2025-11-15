@@ -102,10 +102,11 @@ type CLI struct {
 		} `cmd:"" help:"List attachments"`
 
 		Download struct {
-			MessageID    string `arg:"" required:"" help:"Message ID"`
-			AttachmentID string `help:"Specific attachment ID" name:"attachment-id"`
-			OutputDir    string `help:"Output directory" type:"path" default:"."`
-			Output       string `help:"Output filename (single attachment only)"`
+			MessageID string   `arg:"" required:"" help:"Message ID"`
+			Index     []string `help:"Attachment index (0-based, supports comma-separated and multiple flags)" short:"i"`
+			Filename  string   `help:"Filename pattern (glob)" short:"f"`
+			OutputDir string   `help:"Output directory" type:"path" default:"~/Downloads"`
+			Output    string   `help:"Output filename (single attachment only)"`
 		} `cmd:"" help:"Download attachments"`
 	} `cmd:"" help:"Attachment operations"`
 }
@@ -310,8 +311,8 @@ func main() {
 		}
 
 		if err := runAttachmentsDownload(cmdCtx, conn, cli.Attachments.Download.MessageID,
-			cli.Attachments.Download.AttachmentID, cli.Attachments.Download.OutputDir,
-			cli.Attachments.Download.Output, out); err != nil {
+			cli.Attachments.Download.Index, cli.Attachments.Download.Filename,
+			cli.Attachments.Download.OutputDir, cli.Attachments.Download.Output, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
