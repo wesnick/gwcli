@@ -2,9 +2,9 @@ name: Test
 
 on:
   push:
-    branches: ["master"]
+    branches: ["main"]
   pull_request:
-    branches: ["master"]
+    branches: ["main"]
 
 jobs:
   build:
@@ -19,7 +19,7 @@ jobs:
           cache-dependency-path: 'go.sum'
       - name: Build binary
         run:
-           go build ./cmd/cmdg
+           go build ./cmd/gwcli
       - name: Vet
         run:
            go vet ./...

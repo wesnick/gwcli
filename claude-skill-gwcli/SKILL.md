@@ -1,17 +1,17 @@
 ---
-name: gmailcli
-description: This skill should be used when working with Gmail operations via the gmailcli command-line tool. Use this skill when the user asks to interact with Gmail (read/send/search emails, manage labels, download attachments), automate email workflows, or needs help with gmailcli commands.
+name: gwcli
+description: This skill should be used when working with Gmail operations via the gwcli command-line tool. Use this skill when the user asks to interact with Gmail (read/send/search emails, manage labels, download attachments), automate email workflows, or needs help with gwcli commands.
 ---
 
-# gmailcli
+# gwcli
 
 ## Overview
 
-This skill provides comprehensive guidance for using gmailcli, a command-line Gmail client with a resource-oriented interface (similar to kubectl). It enables automation of Gmail operations including message management, label operations, and attachment handling through a Unix-friendly CLI.
+This skill provides comprehensive guidance for using gwcli, a command-line Gmail client with a resource-oriented interface (similar to kubectl). It enables automation of Gmail operations including message management, label operations, and attachment handling through a Unix-friendly CLI.
 
 ## Core Capabilities
 
-gmailcli provides three main resource types:
+gwcli provides three main resource types:
 
 1. **Messages** - Read, send, search, delete, mark read/unread, and move emails
 2. **Labels** - List, create, delete, apply, and remove Gmail labels
@@ -31,27 +31,27 @@ Use this skill when the user:
 
 ### Initial Setup
 
-Before using gmailcli, configure OAuth authentication:
+Before using gwcli, configure OAuth authentication:
 
 ```bash
-gmailcli configure
+gwcli configure
 ```
 
 This opens a browser for Google OAuth and saves credentials to `~/.cmdg/cmdg.conf`. The tool shares authentication with cmdg TUI if already configured.
 
 ### Basic Command Pattern
 
-gmailcli follows a resource-oriented structure:
+gwcli follows a resource-oriented structure:
 
 ```bash
-gmailcli <resource> <action> [arguments] [flags]
+gwcli <resource> <action> [arguments] [flags]
 ```
 
 **Example:**
 ```bash
-gmailcli messages list --unread-only
-gmailcli labels create "Work/Projects"
-gmailcli attachments download <message-id>
+gwcli messages list --unread-only
+gwcli labels create "Work/Projects"
+gwcli attachments download <message-id>
 ```
 
 ## Common Workflows
@@ -61,51 +61,51 @@ gmailcli attachments download <message-id>
 **List messages:**
 ```bash
 # List inbox
-gmailcli messages list
+gwcli messages list
 
 # List specific label
-gmailcli messages list --label "Work"
+gwcli messages list --label "Work"
 
 # Unread only
-gmailcli messages list --unread-only
+gwcli messages list --unread-only
 
 # Output as JSON for processing
-gmailcli messages list --json
+gwcli messages list --json
 ```
 
 **Search with Gmail query syntax:**
 ```bash
 # Search by sender
-gmailcli messages search "from:user@example.com"
+gwcli messages search "from:user@example.com"
 
 # Complex queries
-gmailcli messages search "subject:urgent is:unread has:attachment"
+gwcli messages search "subject:urgent is:unread has:attachment"
 
 # Date-based searches
-gmailcli messages search "after:2025/10/01 before:2025/11/01"
-gmailcli messages search "older_than:30d category:promotions"
+gwcli messages search "after:2025/10/01 before:2025/11/01"
+gwcli messages search "older_than:30d category:promotions"
 ```
 
 **Read individual messages:**
 ```bash
 # Read full message
-gmailcli messages read <message-id>
+gwcli messages read <message-id>
 
 # Headers only
-gmailcli messages read <message-id> --headers-only
+gwcli messages read <message-id> --headers-only
 
 # Raw RFC822 format
-gmailcli messages read <message-id> --raw
+gwcli messages read <message-id> --raw
 
 # JSON output
-gmailcli messages read <message-id> --json
+gwcli messages read <message-id> --json
 ```
 
 ### Sending Email
 
 **Send simple email:**
 ```bash
-gmailcli messages send \
+gwcli messages send \
   --to user@example.com \
   --subject "Hello" \
   --body "Message text"
@@ -113,7 +113,7 @@ gmailcli messages send \
 
 **Send with attachments:**
 ```bash
-gmailcli messages send \
+gwcli messages send \
   --to user@example.com \
   --subject "Documents" \
   --attach report.pdf \
@@ -123,7 +123,7 @@ gmailcli messages send \
 
 **Multiple recipients:**
 ```bash
-gmailcli messages send \
+gwcli messages send \
   --to user1@example.com \
   --to user2@example.com \
   --cc manager@example.com \
@@ -134,47 +134,47 @@ gmailcli messages send \
 
 **Body from stdin:**
 ```bash
-cat message.txt | gmailcli messages send \
+cat message.txt | gwcli messages send \
   --to user@example.com \
   --subject "Report"
 ```
 
 ### Batch Operations
 
-gmailcli supports `--stdin` for batch processing. Common pattern:
+gwcli supports `--stdin` for batch processing. Common pattern:
 
 ```bash
-gmailcli messages search "<query>" --json | \
+gwcli messages search "<query>" --json | \
   jq -r '.[].id' | \
-  gmailcli messages <operation> --stdin [flags]
+  gwcli messages <operation> --stdin [flags]
 ```
 
 **Archive read messages:**
 ```bash
-gmailcli messages list --json | \
+gwcli messages list --json | \
   jq -r '.[] | select(.labels | contains(["UNREAD"]) | not) | .id' | \
-  gmailcli messages move --stdin --to "Archive"
+  gwcli messages move --stdin --to "Archive"
 ```
 
 **Delete old promotional emails:**
 ```bash
-gmailcli messages search "category:promotions older_than:30d" --json | \
+gwcli messages search "category:promotions older_than:30d" --json | \
   jq -r '.[].id' | \
-  gmailcli messages delete --stdin --force
+  gwcli messages delete --stdin --force
 ```
 
 **Apply label to search results:**
 ```bash
-gmailcli messages search "from:vip@company.com is:unread" --json | \
+gwcli messages search "from:vip@company.com is:unread" --json | \
   jq -r '.[].id' | \
-  gmailcli labels apply "VIP-Unread" --stdin
+  gwcli labels apply "VIP-Unread" --stdin
 ```
 
 **Bulk mark as read:**
 ```bash
-gmailcli messages list --unread-only --json | \
+gwcli messages list --unread-only --json | \
   jq -r '.[].id' | \
-  gmailcli messages mark-read --stdin
+  gwcli messages mark-read --stdin
 ```
 
 ### Label Management
@@ -182,78 +182,78 @@ gmailcli messages list --unread-only --json | \
 **List labels:**
 ```bash
 # All labels
-gmailcli labels list
+gwcli labels list
 
 # User-created only
-gmailcli labels list --user-only
+gwcli labels list --user-only
 
 # System labels only
-gmailcli labels list --system
+gwcli labels list --system
 
 # JSON output
-gmailcli labels list --json
+gwcli labels list --json
 ```
 
 **Create labels:**
 ```bash
 # Simple label
-gmailcli labels create "Important"
+gwcli labels create "Important"
 
 # Nested label (uses / separator)
-gmailcli labels create "Work/Projects/Q4-2025"
+gwcli labels create "Work/Projects/Q4-2025"
 
 # With color
-gmailcli labels create "Urgent" --color "#ff0000"
+gwcli labels create "Urgent" --color "#ff0000"
 ```
 
 **Apply/remove labels:**
 ```bash
 # Apply to single message
-gmailcli labels apply "Important" --message <message-id>
+gwcli labels apply "Important" --message <message-id>
 
 # Remove from single message
-gmailcli labels remove "Spam" --message <message-id>
+gwcli labels remove "Spam" --message <message-id>
 
 # Batch apply from search
-gmailcli messages search "subject:invoice has:attachment" --json | \
+gwcli messages search "subject:invoice has:attachment" --json | \
   jq -r '.[].id' | \
-  gmailcli labels apply "Invoices" --stdin
+  gwcli labels apply "Invoices" --stdin
 ```
 
 **Delete labels:**
 ```bash
 # Requires --force flag for safety
-gmailcli labels delete "Old Project" --force
+gwcli labels delete "Old Project" --force
 ```
 
 ### Attachment Operations
 
 **List attachments:**
 ```bash
-gmailcli attachments list <message-id>
-gmailcli attachments list <message-id> --json
+gwcli attachments list <message-id>
+gwcli attachments list <message-id> --json
 ```
 
 **Download attachments:**
 ```bash
 # Download all attachments to current directory
-gmailcli attachments download <message-id>
+gwcli attachments download <message-id>
 
 # Download to specific directory
-gmailcli attachments download <message-id> --output-dir ./downloads
+gwcli attachments download <message-id> --output-dir ./downloads
 
 # Download specific attachment
-gmailcli attachments download <message-id> \
+gwcli attachments download <message-id> \
   --attachment-id <att-id> \
   --output report.pdf
 ```
 
 **Download all attachments from label:**
 ```bash
-gmailcli messages list --label "Invoices" --json | \
+gwcli messages list --label "Invoices" --json | \
   jq -r '.[].id' | \
   while read id; do
-    gmailcli attachments download "$id" --output-dir ./invoices
+    gwcli attachments download "$id" --output-dir ./invoices
   done
 ```
 
@@ -271,8 +271,8 @@ Available on all commands:
 ### Safety Features
 
 **Destructive operations require confirmation:**
-- `gmailcli messages delete` requires `--force` flag
-- `gmailcli labels delete` requires `--force` flag
+- `gwcli messages delete` requires `--force` flag
+- `gwcli labels delete` requires `--force` flag
 
 This prevents accidental data loss.
 
@@ -285,10 +285,10 @@ The `move` command:
 
 ```bash
 # Archive (remove from inbox)
-gmailcli messages move <message-id> --to "Archive"
+gwcli messages move <message-id> --to "Archive"
 
 # Move to project folder
-gmailcli messages move <message-id> --to "Work/Projects/Q4"
+gwcli messages move <message-id> --to "Work/Projects/Q4"
 ```
 
 ### Label Resolution
@@ -322,7 +322,7 @@ Nested labels use `/` separator: `"Work/Projects/Q4"`
 Use for error handling in scripts:
 
 ```bash
-if ! gmailcli messages read "$msg_id" 2>/dev/null; then
+if ! gwcli messages read "$msg_id" 2>/dev/null; then
   case $? in
     3) echo "Authentication failed" ;;
     4) echo "Message not found" ;;
@@ -333,7 +333,7 @@ fi
 
 ## Gmail Query Syntax
 
-Use in `gmailcli messages search "<query>"`:
+Use in `gwcli messages search "<query>"`:
 
 **Sender/Recipient:**
 - `from:user@example.com` - From specific sender
@@ -381,9 +381,9 @@ Use in `gmailcli messages search "<query>"`:
 Process messages based on content:
 
 ```bash
-gmailcli messages list --label "Inbox" --json | \
+gwcli messages list --label "Inbox" --json | \
   jq -r '.[] | select(.from | contains("@company.com")) | .id' | \
-  gmailcli labels apply "Internal" --stdin
+  gwcli labels apply "Internal" --stdin
 ```
 
 ### Periodic Cleanup
@@ -395,14 +395,14 @@ Delete old messages by category:
 # cleanup-old-emails.sh
 
 # Delete old promotions (90+ days)
-gmailcli messages search "category:promotions older_than:90d" --json | \
+gwcli messages search "category:promotions older_than:90d" --json | \
   jq -r '.[].id' | \
-  gmailcli messages delete --stdin --force
+  gwcli messages delete --stdin --force
 
 # Delete old social emails (60+ days)
-gmailcli messages search "category:social older_than:60d" --json | \
+gwcli messages search "category:social older_than:60d" --json | \
   jq -r '.[].id' | \
-  gmailcli messages delete --stdin --force
+  gwcli messages delete --stdin --force
 ```
 
 ### Attachment Extraction Pipeline
@@ -418,11 +418,11 @@ OUTPUT_DIR="./invoices/$(date +%Y-%m)"
 
 mkdir -p "$OUTPUT_DIR"
 
-gmailcli messages list --label "$LABEL" --json | \
+gwcli messages list --label "$LABEL" --json | \
   jq -r '.[].id' | \
   while read id; do
     echo "Processing message: $id"
-    gmailcli attachments download "$id" --output-dir "$OUTPUT_DIR"
+    gwcli attachments download "$id" --output-dir "$OUTPUT_DIR"
   done
 
 echo "Downloaded to: $OUTPUT_DIR"
@@ -443,12 +443,12 @@ for domain in "${DOMAINS[@]}"; do
   label="Emails/${domain}"
 
   # Create label if it doesn't exist
-  gmailcli labels create "$label" 2>/dev/null || true
+  gwcli labels create "$label" 2>/dev/null || true
 
   # Apply to recent emails from domain
-  gmailcli messages search "from:@${domain} newer_than:7d" --json | \
+  gwcli messages search "from:@${domain} newer_than:7d" --json | \
     jq -r '.[].id' | \
-    gmailcli labels apply "$label" --stdin
+    gwcli labels apply "$label" --stdin
 done
 ```
 
@@ -463,11 +463,11 @@ Monitor for specific emails:
 QUERY="subject:urgent is:unread"
 
 while true; do
-  COUNT=$(gmailcli messages search "$QUERY" --json | jq 'length')
+  COUNT=$(gwcli messages search "$QUERY" --json | jq 'length')
 
   if [ "$COUNT" -gt 0 ]; then
     echo "[$(date)] Found $COUNT urgent unread messages"
-    gmailcli messages search "$QUERY" --json | \
+    gwcli messages search "$QUERY" --json | \
       jq -r '.[] | "\(.from): \(.subject)"'
   fi
 
@@ -481,32 +481,32 @@ When using `--json`, pipe through `jq` for filtering:
 
 **Extract specific fields:**
 ```bash
-gmailcli messages list --json | jq '.[] | {id, subject, from}'
+gwcli messages list --json | jq '.[] | {id, subject, from}'
 ```
 
 **Filter by criteria:**
 ```bash
 # Messages from specific domain
-gmailcli messages list --json | \
+gwcli messages list --json | \
   jq '.[] | select(.from | contains("@company.com"))'
 
 # Messages with attachments (check labels)
-gmailcli messages list --json | \
+gwcli messages list --json | \
   jq '.[] | select(.labels | contains(["IMPORTANT"]))'
 
 # Unread messages only
-gmailcli messages list --json | \
+gwcli messages list --json | \
   jq '.[] | select(.labels | contains(["UNREAD"]))'
 ```
 
 **Count and statistics:**
 ```bash
 # Count unread messages
-gmailcli messages list --json | \
+gwcli messages list --json | \
   jq '[.[] | select(.labels | contains(["UNREAD"]))] | length'
 
 # Count by label
-gmailcli messages list --json | \
+gwcli messages list --json | \
   jq 'group_by(.labels[]) | map({label: .[0].labels[0], count: length})'
 ```
 
@@ -537,9 +537,9 @@ These scripts can be:
 
 ## Implementation Guidelines
 
-When helping users with gmailcli:
+When helping users with gwcli:
 
-1. **Always check authentication first** - Ensure `gmailcli configure` has been run
+1. **Always check authentication first** - Ensure `gwcli configure` has been run
 2. **Use JSON for automation** - Add `--json` flag when building pipelines
 3. **Include safety flags** - Remind users about `--force` for destructive operations
 4. **Leverage stdin for batches** - Use `--stdin` pattern for processing multiple messages
@@ -552,37 +552,37 @@ When helping users with gmailcli:
 
 ### "Archive all read emails"
 ```bash
-gmailcli messages list --json | \
+gwcli messages list --json | \
   jq -r '.[] | select(.labels | contains(["UNREAD"]) | not) | .id' | \
-  gmailcli messages move --stdin --to "Archive"
+  gwcli messages move --stdin --to "Archive"
 ```
 
 ### "Delete emails from a sender"
 ```bash
-gmailcli messages search "from:unwanted@spam.com" --json | \
+gwcli messages search "from:unwanted@spam.com" --json | \
   jq -r '.[].id' | \
-  gmailcli messages delete --stdin --force
+  gwcli messages delete --stdin --force
 ```
 
 ### "Download all PDF attachments"
 ```bash
-gmailcli messages search "has:attachment filename:pdf" --json | \
+gwcli messages search "has:attachment filename:pdf" --json | \
   jq -r '.[].id' | \
   while read id; do
-    gmailcli attachments download "$id" --output-dir ./pdfs
+    gwcli attachments download "$id" --output-dir ./pdfs
   done
 ```
 
 ### "Label emails by project"
 ```bash
-gmailcli messages search "subject:ProjectX" --json | \
+gwcli messages search "subject:ProjectX" --json | \
   jq -r '.[].id' | \
-  gmailcli labels apply "Work/ProjectX" --stdin
+  gwcli labels apply "Work/ProjectX" --stdin
 ```
 
 ### "Send email to multiple recipients"
 ```bash
-gmailcli messages send \
+gwcli messages send \
   --to person1@example.com \
   --to person2@example.com \
   --to person3@example.com \
@@ -593,13 +593,13 @@ gmailcli messages send \
 ### "Find and extract invoices"
 ```bash
 # Search for invoice emails
-gmailcli messages search "subject:invoice has:attachment" --json | \
+gwcli messages search "subject:invoice has:attachment" --json | \
   jq -r '.[].id' | \
   while read id; do
     # Download attachments
-    gmailcli attachments download "$id" --output-dir ./invoices
+    gwcli attachments download "$id" --output-dir ./invoices
 
     # Label for tracking
-    echo "$id" | gmailcli labels apply "Processed" --stdin
+    echo "$id" | gwcli labels apply "Processed" --stdin
   done
 ```

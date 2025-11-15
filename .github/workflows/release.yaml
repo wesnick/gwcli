@@ -44,12 +44,12 @@ jobs:
 
       - name: Build binary
         run: |
-           go build -o 'cmdg-${{ matrix.platform }}' -ldflags '-X main.InitID=${{ secrets.CLIENT_ID }} -X main.InitSecret=${{ secrets.CLIENT_SECRET }}' ./cmd/cmdg
+           go build -o 'gwcli-${{ matrix.platform }}' -ldflags '-X main.InitID=${{ secrets.CLIENT_ID }} -X main.InitSecret=${{ secrets.CLIENT_SECRET }}' ./cmd/gwcli
 
       - name: Release binary
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.create_release.outputs.tag }}
-          files: cmdg-${{ matrix.platform }}
+          files: gwcli-${{ matrix.platform }}
 
 

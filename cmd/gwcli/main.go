@@ -123,7 +123,7 @@ type CLI struct {
 func main() {
 	var cli CLI
 	ctx := kong.Parse(&cli,
-		kong.Name("gmailcli"),
+		kong.Name("gwcli"),
 		kong.Description("Command-line Gmail client"),
 		kong.UsageOnError(),
 	)
@@ -138,7 +138,7 @@ func main() {
 		}
 
 	case "version":
-		fmt.Printf("gmailcli %s\n", version)
+		fmt.Printf("gwcli %s\n", version)
 
 	case "auth token-info":
 		cmdCtx := context.Background()

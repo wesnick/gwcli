@@ -1,20 +1,20 @@
-# justfile for gmailcli
+# justfile for gwcli
 
 # Default recipe - show available commands
 default:
     @just --list
 
-# Build gmailcli binary
+# Build gwcli binary
 build:
-    go build -o gmailcli ./cmd/gmailcli
+    go build -o gwcli ./cmd/gwcli
 
 # Build with version info
 build-version VERSION:
-    go build -ldflags "-X main.version={{VERSION}}" -o gmailcli ./cmd/gmailcli
+    go build -ldflags "-X main.version={{VERSION}}" -o gwcli ./cmd/gwcli
 
-# Install gmailcli to GOPATH/bin
+# Install gwcli to GOPATH/bin
 install:
-    go install ./cmd/gmailcli
+    go install ./cmd/gwcli
 
 # Run tests
 test:
@@ -33,23 +33,23 @@ check: vet test
 
 # Clean built binaries
 clean:
-    rm -f gmailcli
+    rm -f gwcli
 
-# Run gmailcli with arguments
+# Run gwcli with arguments
 run *ARGS:
-    go run ./cmd/gmailcli {{ARGS}}
+    go run ./cmd/gwcli {{ARGS}}
 
-# Build and run gmailcli
+# Build and run gwcli
 build-run *ARGS: build
-    ./gmailcli {{ARGS}}
+    ./gwcli {{ARGS}}
 
 # Show version
 version:
-    @go run ./cmd/gmailcli version
+    @go run ./cmd/gwcli version
 
 # Run configure
 configure:
-    go run ./cmd/gmailcli configure
+    go run ./cmd/gwcli configure
 
 # Format Go code
 fmt:

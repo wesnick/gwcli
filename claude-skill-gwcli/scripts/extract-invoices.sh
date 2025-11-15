@@ -68,12 +68,12 @@ echo ""
 
 # Create processed label if needed
 if [ "$APPLY_PROCESSED_LABEL" = true ]; then
-  gmailcli labels create "$PROCESSED_LABEL" 2>/dev/null || true
+  gwcli labels create "$PROCESSED_LABEL" 2>/dev/null || true
 fi
 
 # Get message IDs
 echo "Fetching messages with label '$LABEL'..."
-MESSAGE_IDS=$(gmailcli messages list --label "$LABEL" --json 2>/dev/null | jq -r '.[].id')
+MESSAGE_IDS=$(gwcli messages list --label "$LABEL" --json 2>/dev/null | jq -r '.[].id')
 
 if [ -z "$MESSAGE_IDS" ]; then
   echo "No messages found with label '$LABEL'"
@@ -94,7 +94,7 @@ while IFS= read -r message_id; do
   echo "[$CURRENT/$MESSAGE_COUNT] Processing message: $message_id"
 
   # Check if message has attachments
-  ATTACHMENT_COUNT=$(gmailcli attachments list "$message_id" --json 2>/dev/null | jq 'length')
+  ATTACHMENT_COUNT=$(gwcli attachments list "$message_id" --json 2>/dev/null | jq 'length')
 
   if [ "$ATTACHMENT_COUNT" -eq 0 ]; then
     echo "  No attachments found"
@@ -104,13 +104,13 @@ while IFS= read -r message_id; do
   echo "  Found $ATTACHMENT_COUNT attachment(s)"
 
   # Download attachments
-  if gmailcli attachments download "$message_id" --output-dir "$OUTPUT_DIR" 2>&1; then
+  if gwcli attachments download "$message_id" --output-dir "$OUTPUT_DIR" 2>&1; then
     echo "  Downloaded successfully"
     SUCCESSFUL=$((SUCCESSFUL + 1))
 
     # Apply processed label
     if [ "$APPLY_PROCESSED_LABEL" = true ]; then
-      echo "$message_id" | gmailcli labels apply "$PROCESSED_LABEL" --stdin 2>/dev/null || true
+      echo "$message_id" | gwcli labels apply "$PROCESSED_LABEL" --stdin 2>/dev/null || true
     fi
   else
     echo "  Failed to download"

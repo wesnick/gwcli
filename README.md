@@ -1,4 +1,4 @@
-# gmailcli - Command-line Gmail Client
+# gwcli - Command-line Gmail Client
 
 A command-line interface for Gmail, optimized for non-interactive use, shell scripting, and AI agent integration.
 
@@ -8,7 +8,7 @@ This is a fork of [cmdg](https://github.com/ThomasHabets/cmdg) by Thomas Habets.
 
 **Key differences from original cmdg:**
 - **Removed TUI (Text User Interface)** - cmdg was a Pine/Alpine-like interactive email client
-- **Pure CLI tool** - gmailcli is designed for shell scripting and piping to other tools
+- **Pure CLI tool** - gwcli is designed for shell scripting and piping to other tools
 - **No lynx dependency** - HTML emails are output as raw HTML, pipe to `html2md` or similar tools
 - **Simplified for automation** - All commands work non-interactively
 
@@ -22,7 +22,7 @@ See [LICENSE](LICENSE) for full GPL v2 text.
 
 ## Introduction
 
-gmailcli provides command-line access to Gmail using the Gmail API. It supports:
+gwcli provides command-line access to Gmail using the Gmail API. It supports:
 
 - Listing, reading, searching messages
 - Sending emails with attachments
@@ -30,7 +30,7 @@ gmailcli provides command-line access to Gmail using the Gmail API. It supports:
 - Batch operations via stdin
 - JSON output for easy parsing
 
-## Why gmailcli?
+## Why gwcli?
 
 ### Benefits over IMAP
 * **No passwords on disk** - OAuth2 is used instead. Access can be revoked at [Google Security Settings](https://security.google.com/settings/security/permissions)
@@ -47,23 +47,23 @@ gmailcli provides command-line access to Gmail using the Gmail API. It supports:
 
 ### Design for AI Agents and Automation
 
-gmailcli is designed to be easily used by AI agents and shell scripts:
+gwcli is designed to be easily used by AI agents and shell scripts:
 
 ```bash
 # Get raw HTML email, convert to markdown
-gmailcli messages read --prefer-html <msg-id> | html2md
+gwcli messages read --prefer-html <msg-id> | html2md
 
 # Get plain text (default)
-gmailcli messages read <msg-id>
+gwcli messages read <msg-id>
 
 # Get structured JSON output
-gmailcli --json messages list --label INBOX
+gwcli --json messages list --label INBOX
 
 # Batch operations via stdin
-echo "msg1\nmsg2\nmsg3" | gmailcli messages mark-read --stdin
+echo "msg1\nmsg2\nmsg3" | gwcli messages mark-read --stdin
 
 # Search and process
-gmailcli messages search "from:example.com" --json | jq '.[] | .subject'
+gwcli messages search "from:example.com" --json | jq '.[] | .subject'
 ```
 
 ## Installing
@@ -71,13 +71,13 @@ gmailcli messages search "from:example.com" --json | jq '.[] | .subject'
 ### Building from source
 
 ```bash
-go build ./cmd/gmailcli
-sudo cp gmailcli /usr/local/bin
+go build ./cmd/gwcli
+sudo cp gwcli /usr/local/bin
 ```
 
 ## Configuring
 
-You need to configure `gmailcli` to provide OAuth2 authentication to Gmail:
+You need to configure `gwcli` to provide OAuth2 authentication to Gmail:
 
 1. Go to the [Google Developers Console](https://console.developers.google.com/apis)
 2. Select an existing project or create a new project
@@ -99,7 +99,7 @@ You need to configure `gmailcli` to provide OAuth2 authentication to Gmail:
 Then run:
 
 ```bash
-gmailcli configure
+gwcli configure
 # Enter Client ID and Client Secret when prompted
 # Follow the browser authentication flow
 ```
@@ -112,48 +112,48 @@ This creates `~/.cmdg/cmdg.conf` (note: still uses the same config path as cmdg)
 
 ```bash
 # List inbox messages
-gmailcli messages list
+gwcli messages list
 
 # List unread messages only
-gmailcli messages list --unread-only
+gwcli messages list --unread-only
 
 # Read a message (plain text preferred)
-gmailcli messages read <message-id>
+gwcli messages read <message-id>
 
 # Read message preferring HTML output
-gmailcli messages read --prefer-html <message-id>
-gmailcli messages read -H <message-id>
+gwcli messages read --prefer-html <message-id>
+gwcli messages read -H <message-id>
 
 # Get just headers
-gmailcli messages read --headers-only <message-id>
+gwcli messages read --headers-only <message-id>
 
 # Get raw RFC822 format
-gmailcli messages read --raw <message-id>
+gwcli messages read --raw <message-id>
 
 # JSON output
-gmailcli --json messages read <message-id>
+gwcli --json messages read <message-id>
 ```
 
 ### Searching
 
 ```bash
 # Search messages
-gmailcli messages search "from:example.com subject:important"
+gwcli messages search "from:example.com subject:important"
 
 # Limit results
-gmailcli messages search "is:unread" --limit 10
+gwcli messages search "is:unread" --limit 10
 ```
 
 ### Sending
 
 ```bash
 # Send email (body from stdin)
-echo "Email body" | gmailcli messages send \
+echo "Email body" | gwcli messages send \
   --to recipient@example.com \
   --subject "Hello"
 
 # Send with attachments
-gmailcli messages send \
+gwcli messages send \
   --to recipient@example.com \
   --subject "Files attached" \
   --body "See attached files" \
@@ -165,44 +165,44 @@ gmailcli messages send \
 
 ```bash
 # List all labels
-gmailcli labels list
+gwcli labels list
 
 # Create a label
-gmailcli labels create "MyLabel"
+gwcli labels create "MyLabel"
 
 # Apply label to message
-gmailcli labels apply "MyLabel" --message <message-id>
+gwcli labels apply "MyLabel" --message <message-id>
 
 # Batch apply label (via stdin)
-echo "msg1\nmsg2\nmsg3" | gmailcli labels apply "Archive" --stdin
+echo "msg1\nmsg2\nmsg3" | gwcli labels apply "Archive" --stdin
 ```
 
 ### Attachments
 
 ```bash
 # List attachments in a message
-gmailcli attachments list <message-id>
+gwcli attachments list <message-id>
 
 # Download all attachments
-gmailcli attachments download <message-id>
+gwcli attachments download <message-id>
 
 # Download specific attachment
-gmailcli attachments download <message-id> --attachment-id <att-id>
+gwcli attachments download <message-id> --attachment-id <att-id>
 
 # Download to specific file
-gmailcli attachments download <message-id> --output myfile.pdf
+gwcli attachments download <message-id> --output myfile.pdf
 ```
 
 ### Batch Operations
 
 ```bash
 # Mark multiple messages as read
-cat message-ids.txt | gmailcli messages mark-read --stdin
+cat message-ids.txt | gwcli messages mark-read --stdin
 
 # Delete multiple messages
-gmailcli messages search "older_than:1y" --json | \
+gwcli messages search "older_than:1y" --json | \
   jq -r '.[].id' | \
-  gmailcli messages delete --stdin --force
+  gwcli messages delete --stdin --force
 ```
 
 ## JSON Output
@@ -210,7 +210,7 @@ gmailcli messages search "older_than:1y" --json | \
 All commands support `--json` flag for structured output:
 
 ```bash
-gmailcli --json messages list | jq '.[0]'
+gwcli --json messages list | jq '.[0]'
 {
   "id": "18f4a2b3c5d6e7f8",
   "threadId": "18f4a2b3c5d6e7f8",
@@ -224,22 +224,22 @@ gmailcli --json messages list | jq '.[0]'
 
 ## Piping HTML to Markdown
 
-Since gmailcli outputs raw HTML (not rendered), you can pipe to converters:
+Since gwcli outputs raw HTML (not rendered), you can pipe to converters:
 
 ```bash
 # Install html2markdown (or similar tool)
 go install github.com/suntong/html2md@latest
 
 # Convert HTML emails to markdown
-gmailcli messages read -H <msg-id> | html2md
+gwcli messages read -H <msg-id> | html2md
 
 # Or use pandoc
-gmailcli messages read -H <msg-id> | pandoc -f html -t markdown
+gwcli messages read -H <msg-id> | pandoc -f html -t markdown
 ```
 
 ## Differences from Original cmdg
 
-| Feature | cmdg (original) | gmailcli (this fork) |
+| Feature | cmdg (original) | gwcli (this fork) |
 |---------|----------------|---------------------|
 | Interactive TUI | ✅ Yes (Pine/Alpine-like) | ❌ Removed |
 | Command-line interface | ❌ No | ✅ Yes |
@@ -262,6 +262,6 @@ Not accepting:
 
 ## Support
 
-For issues specific to gmailcli (CLI functionality), open an issue on this repository.
+For issues specific to gwcli (CLI functionality), open an issue on this repository.
 
 For general Gmail API questions or issues inherited from original cmdg, see the [original cmdg repository](https://github.com/ThomasHabets/cmdg).

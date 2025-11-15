@@ -61,7 +61,7 @@ delete_category() {
   echo "Processing: ${category} (older than ${age})"
 
   # Get message IDs
-  local ids=$(gmailcli messages search "$query" --json 2>/dev/null | jq -r '.[].id')
+  local ids=$(gwcli messages search "$query" --json 2>/dev/null | jq -r '.[].id')
 
   if [ -z "$ids" ]; then
     echo "  No messages found"
@@ -75,7 +75,7 @@ delete_category() {
     echo "  [DRY RUN] Would delete $count messages"
   else
     echo "  Deleting..."
-    echo "$ids" | gmailcli messages delete --stdin --force
+    echo "$ids" | gwcli messages delete --stdin --force
     echo "  Deleted $count messages"
   fi
 

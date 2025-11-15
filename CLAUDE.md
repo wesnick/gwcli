@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**gmailcli** is a command-line Gmail client forked from cmdg. Unlike the original cmdg (which was a TUI email client), gmailcli is a pure CLI tool designed for non-interactive use, shell scripting, and AI agent integration.
+**gwcli** is a command-line Gmail client forked from cmdg. Unlike the original cmdg (which was a TUI email client), gwcli is a pure CLI tool designed for non-interactive use, shell scripting, and AI agent integration.
 
 **Key architectural change from cmdg:** The TUI components have been completely removed. All interactive terminal UI code (Pine/Alpine-like interface) has been stripped out, leaving only the CLI command structure.
 
@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Build the binary
-go build -o gmailcli ./cmd/gmailcli
+go build -o gwcli ./cmd/gwcli
 # OR use justfile
 just build
 
@@ -21,11 +21,11 @@ go test ./...
 just test
 
 # Run without building
-go run ./cmd/gmailcli <subcommand>
+go run ./cmd/gwcli <subcommand>
 just run <subcommand>
 
 # Install to GOPATH/bin
-go install ./cmd/gmailcli
+go install ./cmd/gwcli
 just install
 
 # Format and lint
@@ -53,7 +53,7 @@ go test -v ./...
 
 ### Command Structure (Kong CLI)
 
-The CLI uses **Kong** for command parsing (not Cobra). Command definitions are in `cmd/gmailcli/main.go` as a struct:
+The CLI uses **Kong** for command parsing (not Cobra). Command definitions are in `cmd/gwcli/main.go` as a struct:
 
 ```go
 type CLI struct {
@@ -81,7 +81,7 @@ The `CmdG` struct is the central object passed to all command handlers.
 
 **`pkg/cmdg/configure.go`** handles OAuth2 setup flow.
 
-### Command Handlers (cmd/gmailcli/)
+### Command Handlers (cmd/gwcli/)
 
 - **`messages.go`** - All message operations (list, read, search, send, delete, mark read/unread)
 - **`labels.go`** - Label operations (list, create, delete, apply, remove)
@@ -106,7 +106,7 @@ All commands check `out.json` flag to determine output format.
 
 ### Authentication Flow
 
-1. User runs `gmailcli configure`
+1. User runs `gwcli configure`
 2. `runConfigure()` calls `cmdg.Configure()` which prompts for OAuth client ID/secret
 3. Opens browser for OAuth consent
 4. Saves tokens to `~/.cmdg/cmdg.conf` (JSON format)
@@ -122,7 +122,7 @@ func readIDsFromStdin() ([]string, error)
 
 This enables pipeable workflows:
 ```bash
-gmailcli messages search "old" | jq -r '.[].id' | gmailcli messages delete --stdin --force
+gwcli messages search "old" | jq -r '.[].id' | gwcli messages delete --stdin --force
 ```
 
 ## Important Implementation Details
@@ -153,21 +153,21 @@ System labels (INBOX, UNREAD, SENT, etc.) are uppercase IDs.
 
 ### Email Output Formats
 
-The `gmailcli messages read` command supports three output formats:
+The `gwcli messages read` command supports three output formats:
 
 1. **Markdown (default)**: Converts HTML email to markdown with YAML frontmatter
    ```bash
-   gmailcli messages read <message-id>
+   gwcli messages read <message-id>
    ```
 
 2. **Raw HTML** (`--raw-html`): Outputs raw HTML body with HTML-formatted headers/attachments
    ```bash
-   gmailcli messages read <message-id> --raw-html
+   gwcli messages read <message-id> --raw-html
    ```
 
 3. **Plain Text** (`--prefer-plain`): Outputs plain text body with YAML frontmatter
    ```bash
-   gmailcli messages read <message-id> --prefer-plain
+   gwcli messages read <message-id> --prefer-plain
    ```
 
 **Frontmatter includes actionable IDs:**
@@ -204,7 +204,7 @@ Format: JSON containing OAuth2 tokens and client credentials. Do not commit this
 
 ## Common Gotchas
 
-1. **Config path**: Despite being "gmailcli", it uses `~/.cmdg/` directory for backwards compatibility with cmdg
+1. **Config path**: Despite being "gwcli", it uses `~/.cmdg/` directory for backwards compatibility with cmdg
 2. **Kong syntax**: Command matching uses exact strings like `"messages list"` not path-style routes
 3. **No interactive prompts**: All commands must work non-interactively (for scripting)
 4. **Label IDs vs Names**: Always handle both - users may provide either

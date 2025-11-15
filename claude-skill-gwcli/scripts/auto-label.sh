@@ -7,7 +7,7 @@
 set -e
 
 # Default configuration
-CONFIG_FILE="${HOME}/.gmailcli-auto-label.conf"
+CONFIG_FILE="${HOME}/.gwcli-auto-label.conf"
 DRY_RUN=false
 TIME_WINDOW="7d"
 
@@ -32,7 +32,7 @@ while [[ $# -gt 0 ]]; do
       echo "Automatically label messages based on rules in config file."
       echo ""
       echo "Options:"
-      echo "  --config FILE       Config file path (default: ~/.gmailcli-auto-label.conf)"
+      echo "  --config FILE       Config file path (default: ~/.gwcli-auto-label.conf)"
       echo "  --dry-run           Show what would be labeled without applying"
       echo "  --time-window AGE   Only process emails newer than AGE (default: 7d)"
       echo "  --help              Show this help message"
@@ -142,7 +142,7 @@ while IFS= read -r line; do
   echo "Rule $RULE_COUNT: $rule_type:$criteria → $label"
 
   # Search for messages
-  MESSAGE_IDS=$(gmailcli messages search "$query" --json 2>/dev/null | jq -r '.[].id')
+  MESSAGE_IDS=$(gwcli messages search "$query" --json 2>/dev/null | jq -r '.[].id')
 
   if [ -z "$MESSAGE_IDS" ]; then
     echo "  No messages found"
@@ -157,11 +157,11 @@ while IFS= read -r line; do
     echo "  [DRY RUN] Would apply label '$label' to $MESSAGE_COUNT messages"
   else
     # Create label if it doesn't exist
-    gmailcli labels create "$label" 2>/dev/null || true
+    gwcli labels create "$label" 2>/dev/null || true
 
     # Apply label
     echo "  Applying label '$label'..."
-    echo "$MESSAGE_IDS" | gmailcli labels apply "$label" --stdin 2>&1 | grep -v "^$" || true
+    echo "$MESSAGE_IDS" | gwcli labels apply "$label" --stdin 2>&1 | grep -v "^$" || true
     echo "  Applied to $MESSAGE_COUNT messages"
 
     TOTAL_LABELED=$((TOTAL_LABELED + MESSAGE_COUNT))

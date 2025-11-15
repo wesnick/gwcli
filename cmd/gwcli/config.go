@@ -36,7 +36,7 @@ func getConnection(configPath string) (*cmdg.CmdG, error) {
 
 	// Check if config exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("config file not found: %s\nRun 'gmailcli configure' to set up authentication", configPath)
+		return nil, fmt.Errorf("config file not found: %s\nRun 'gwcli configure' to set up authentication", configPath)
 	}
 
 	conn, err := cmdg.New(configPath)
