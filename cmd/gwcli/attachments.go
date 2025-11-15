@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/wesnick/cmdg/pkg/cmdg"
+	"github.com/wesnick/cmdg/pkg/gwcli"
 )
 
 // runAttachmentsList lists attachments in a message

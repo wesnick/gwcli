@@ -11,7 +11,7 @@ import (
 var version = "dev"
 
 type CLI struct {
-	Config  string `help:"Config file path" default:"~/.cmdg/cmdg.conf" type:"path"`
+	Config  string `help:"Config directory path" default:"~/.config/gwcli" type:"path"`
 	JSON    bool   `help:"JSON output format"`
 	Verbose bool   `help:"Verbose logging"`
 	NoColor bool   `help:"Disable colored output"`
@@ -83,16 +83,6 @@ type CLI struct {
 			UserOnly bool `help:"User labels only" name:"user-only"`
 		} `cmd:"" help:"List labels"`
 
-		Create struct {
-			Name  string `arg:"" required:"" help:"Label name"`
-			Color string `help:"Label color"`
-		} `cmd:"" help:"Create label"`
-
-		Delete struct {
-			LabelID string `arg:"" required:"" help:"Label ID or name"`
-			Force   bool   `required:"" help:"Confirm deletion"`
-		} `cmd:"" help:"Delete label"`
-
 		Apply struct {
 			LabelID   string `arg:"" required:"" help:"Label ID or name"`
 			MessageID string `help:"Message ID" name:"message"`
@@ -104,7 +94,7 @@ type CLI struct {
 			MessageID string `help:"Message ID" name:"message"`
 			Stdin     bool   `help:"Read IDs from stdin"`
 		} `cmd:"" help:"Remove label from messages"`
-	} `cmd:"" help:"Label operations"`
+	} `cmd:"" help:"Label operations (use gmailctl to create/delete labels)"`
 
 	Attachments struct {
 		List struct {
@@ -268,32 +258,6 @@ func main() {
 		}
 
 		if err := runLabelsList(cmdCtx, conn, cli.Labels.List.System, cli.Labels.List.UserOnly, out); err != nil {
-			out.writeError(err)
-			os.Exit(2)
-		}
-
-	case "labels create":
-		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
-		if err != nil {
-			out.writeError(err)
-			os.Exit(3)
-		}
-
-		if err := runLabelsCreate(cmdCtx, conn, cli.Labels.Create.Name, cli.Labels.Create.Color, out); err != nil {
-			out.writeError(err)
-			os.Exit(2)
-		}
-
-	case "labels delete":
-		cmdCtx := context.Background()
-		conn, err := getConnection(cli.Config)
-		if err != nil {
-			out.writeError(err)
-			os.Exit(3)
-		}
-
-		if err := runLabelsDelete(cmdCtx, conn, cli.Labels.Delete.LabelID, cli.Labels.Delete.Force, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}

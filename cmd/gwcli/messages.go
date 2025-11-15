@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/wesnick/cmdg/pkg/cmdg"
+	"github.com/wesnick/cmdg/pkg/gwcli"
 	"google.golang.org/api/gmail/v1"
 )
 

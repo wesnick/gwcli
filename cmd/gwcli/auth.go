@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/wesnick/cmdg/pkg/cmdg"
+	"github.com/wesnick/cmdg/pkg/gwcli"
 )
 
 // tokenInfoOutput is JSON output for token info
