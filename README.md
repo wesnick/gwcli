@@ -35,7 +35,7 @@ gwcli provides command-line access to Gmail using the Gmail API. It supports:
 ### Benefits over IMAP
 * **No passwords on disk** - OAuth2 is used instead. Access can be revoked at [Google Security Settings](https://security.google.com/settings/security/permissions)
 * **Native Gmail labels** - No awkward IMAP folder mapping
-* **Google Contacts integration** - Uses your actual contact list
+* **gmailctl compatible** - Works seamlessly with gmailctl label definitions
 * **Better security** - Application-specific access, not full account credentials
 
 ### Benefits over Gmail web UI
@@ -81,15 +81,13 @@ You need to configure `gwcli` to provide OAuth2 authentication to Gmail:
 
 1. Go to the [Google Developers Console](https://console.developers.google.com/apis)
 2. Select an existing project or create a new project
-3. Enable these three APIs:
+3. Enable the Gmail API:
    - Gmail API: `https://console.developers.google.com/apis/api/gmail.googleapis.com/overview`
-   - Google Drive API: `https://console.developers.google.com/apis/api/drive.googleapis.com/overview`
-   - People API: `https://console.developers.google.com/apis/api/people.googleapis.com/overview`
 4. Navigate to "OAuth consent screen" and fill it out
 5. Add scopes (or manually add these URLs):
-   - Gmail API: `https://www.googleapis.com/auth/gmail.modify`
-   - Google Drive API: `https://www.googleapis.com/auth/drive.appdata`
-   - People API: `https://www.googleapis.com/auth/contacts.readonly`
+   - `https://www.googleapis.com/auth/gmail.modify`
+   - `https://www.googleapis.com/auth/gmail.settings.basic`
+   - `https://www.googleapis.com/auth/gmail.labels`
 6. Navigate to "Credentials" page
 7. Click "+ CREATE CREDENTIALS"
 8. Select "OAuth client ID"
@@ -104,7 +102,9 @@ gwcli configure
 # Follow the browser authentication flow
 ```
 
-This creates `~/.cmdg/cmdg.conf` (note: still uses the same config path as cmdg).
+This creates `~/.config/gwcli/` directory with OAuth credentials.
+
+**Note:** gwcli uses gmailctl-compatible OAuth scopes, so it can coexist with gmailctl installations and share label definitions.
 
 ## Usage Examples
 
