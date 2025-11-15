@@ -45,7 +45,7 @@ jobs:
       - name: Build binary
         run: |
            mkdir -p dist
-           go build -o 'dist/gwcli-${{ matrix.platform }}' -ldflags '-X main.InitID=${{ secrets.CLIENT_ID }} -X main.InitSecret=${{ secrets.CLIENT_SECRET }}' ./cmd/gwcli
+           go build -o 'dist/gwcli-${{ matrix.platform }}' ./cmd/gwcli
 
       - name: Release binary
         uses: softprops/action-gh-release@v2
