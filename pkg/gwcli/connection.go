@@ -142,7 +142,8 @@ func readConf(fn string) (Config, error) {
 
 // New creates a new CmdG with gmailctl-style authentication.
 // configDir should point to the directory containing credentials.json and token.json
-func New(configDir string) (*CmdG, error) {
+// userEmail is only required when using service account authentication (for user impersonation)
+func New(configDir string, userEmail string) (*CmdG, error) {
 	conn := &CmdG{
 		messageCache: make(map[string]*Message),
 		labelCache:   make(map[string]*Label),
@@ -159,7 +160,7 @@ func New(configDir string) (*CmdG, error) {
 
 	// Initialize Gmail service using gmailctl authentication
 	ctx := context.Background()
-	gmailSvc, err := InitializeAuth(ctx, paths)
+	gmailSvc, err := InitializeAuth(ctx, paths, userEmail)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +168,27 @@ func New(configDir string) (*CmdG, error) {
 	// Store the gmail service
 	conn.gmail = gmailSvc
 
-	// Get authenticated HTTP client for Drive and People APIs
+	// Check if using service account (no token file needed)
+	credFile, err := os.Open(paths.Credentials)
+	if err != nil {
+		return nil, errors.Wrapf(err, "opening credentials")
+	}
+	defer credFile.Close()
+
+	isServiceAcct, err := gmailctl.IsServiceAccount(credFile)
+	if err != nil {
+		return nil, errors.Wrapf(err, "detecting credential type")
+	}
+
+	// Service accounts don't need Drive/People client setup (no token file)
+	if isServiceAcct {
+		// For service accounts, we can't set up Drive and People APIs the same way
+		// Just set up the Gmail client which we already have
+		conn.authedClient = nil // Service accounts don't use the same auth flow
+		return conn, nil
+	}
+
+	// For OAuth: Get authenticated HTTP client for Drive and People APIs
 	tokenFile, err := os.Open(paths.Token)
 	if err != nil {
 		return nil, errors.Wrapf(err, "opening token")

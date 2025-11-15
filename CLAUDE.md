@@ -202,6 +202,10 @@ Optional files:
 
 ### Authentication Setup
 
+gwcli supports two authentication methods:
+
+#### OAuth 2.0 (Regular Gmail Accounts)
+
 1. Go to https://console.developers.google.com
 2. Create a new project (or select existing)
 3. Enable Gmail API
@@ -214,6 +218,34 @@ Required OAuth scopes:
 - `https://www.googleapis.com/auth/gmail.modify`
 - `https://www.googleapis.com/auth/gmail.settings.basic`
 - `https://www.googleapis.com/auth/gmail.labels`
+
+#### Service Account (Google Workspace Domain-Wide Delegation)
+
+For Google Workspace accounts, you can use a service account to impersonate users without requiring browser-based OAuth:
+
+1. Go to https://console.developers.google.com
+2. Create a new project (or select existing)
+3. Enable Gmail API
+4. Create a Service Account
+5. Enable domain-wide delegation for the service account
+6. Download the service account credentials as JSON
+7. Save to `~/.config/gwcli/credentials.json`
+8. In your Google Workspace Admin Console, authorize the service account with the required scopes:
+   - `https://www.googleapis.com/auth/gmail.modify`
+   - `https://www.googleapis.com/auth/gmail.settings.basic`
+   - `https://www.googleapis.com/auth/gmail.labels`
+9. Use the `--user` flag to specify which user to impersonate:
+   ```bash
+   gwcli --user user@example.com messages list
+   ```
+
+**Note**: Service accounts automatically detect the credential type. No `configure` step is needed for service accounts.
+
+**Alternative**: You can also create a separate config directory for each user:
+```bash
+gwcli --config ~/.config/gwcli/user1 --user user1@example.com messages list
+gwcli --config ~/.config/gwcli/user2 --user user2@example.com messages list
+```
 
 ### Label Management
 
