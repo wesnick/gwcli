@@ -6,13 +6,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/wesnick/cmdg/pkg/gwcli"
+	"github.com/wesnick/gwcli/pkg/gwcli"
 )
 
 // runAttachmentsList lists attachments in a message
-func runAttachmentsList(ctx context.Context, conn *cmdg.CmdG, messageID string, out *outputWriter) error {
-	msg := cmdg.NewMessage(conn, messageID)
-	if err := msg.Preload(ctx, cmdg.LevelFull); err != nil {
+func runAttachmentsList(ctx context.Context, conn *gwcli.CmdG, messageID string, out *outputWriter) error {
+	msg := gwcli.NewMessage(conn, messageID)
+	if err := msg.Preload(ctx, gwcli.LevelFull); err != nil {
 		return fmt.Errorf("failed to get message: %w", err)
 	}
 
@@ -54,9 +54,9 @@ func runAttachmentsList(ctx context.Context, conn *cmdg.CmdG, messageID string, 
 }
 
 // runAttachmentsDownload downloads attachments from a message
-func runAttachmentsDownload(ctx context.Context, conn *cmdg.CmdG, messageID, attachmentID, outputDir, outputFile string, out *outputWriter) error {
-	msg := cmdg.NewMessage(conn, messageID)
-	if err := msg.Preload(ctx, cmdg.LevelFull); err != nil {
+func runAttachmentsDownload(ctx context.Context, conn *gwcli.CmdG, messageID, attachmentID, outputDir, outputFile string, out *outputWriter) error {
+	msg := gwcli.NewMessage(conn, messageID)
+	if err := msg.Preload(ctx, gwcli.LevelFull); err != nil {
 		return fmt.Errorf("failed to get message: %w", err)
 	}
 
@@ -71,7 +71,7 @@ func runAttachmentsDownload(ctx context.Context, conn *cmdg.CmdG, messageID, att
 	// Filter by attachment ID if specified
 	toDownload := attachments
 	if attachmentID != "" {
-		toDownload = []*cmdg.Attachment{}
+		toDownload = []*gwcli.Attachment{}
 		for _, att := range attachments {
 			if att.ID == attachmentID {
 				toDownload = append(toDownload, att)

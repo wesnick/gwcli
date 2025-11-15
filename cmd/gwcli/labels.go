@@ -6,8 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/wesnick/cmdg/pkg/gwcli"
-	"google.golang.org/api/gmail/v1"
+	"github.com/wesnick/gwcli/pkg/gwcli"
 )
 
 // labelListOutput is JSON output for labels
@@ -21,11 +20,11 @@ type labelListOutput struct {
 }
 
 // runLabelsList lists all labels
-func runLabelsList(ctx context.Context, conn *cmdg.CmdG, systemOnly, userOnly bool, out *outputWriter) error {
+func runLabelsList(ctx context.Context, conn *gwcli.CmdG, systemOnly, userOnly bool, out *outputWriter) error {
 	labels := conn.Labels()
 
 	// Filter
-	filtered := []*cmdg.Label{}
+	filtered := []*gwcli.Label{}
 	for _, l := range labels {
 		if l.Response == nil {
 			continue
@@ -72,7 +71,7 @@ func runLabelsList(ctx context.Context, conn *cmdg.CmdG, systemOnly, userOnly bo
 }
 
 // runLabelsApply applies a label to messages
-func runLabelsApply(ctx context.Context, conn *cmdg.CmdG, labelID, messageID string, stdin bool, verbose bool, out *outputWriter) error {
+func runLabelsApply(ctx context.Context, conn *gwcli.CmdG, labelID, messageID string, stdin bool, verbose bool, out *outputWriter) error {
 	var ids []string
 	var err error
 
@@ -128,7 +127,7 @@ func runLabelsApply(ctx context.Context, conn *cmdg.CmdG, labelID, messageID str
 }
 
 // runLabelsRemove removes a label from messages
-func runLabelsRemove(ctx context.Context, conn *cmdg.CmdG, labelID, messageID string, stdin bool, verbose bool, out *outputWriter) error {
+func runLabelsRemove(ctx context.Context, conn *gwcli.CmdG, labelID, messageID string, stdin bool, verbose bool, out *outputWriter) error {
 	var ids []string
 	var err error
 

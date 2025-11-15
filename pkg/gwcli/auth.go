@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/wesnick/cmdg/pkg/gwcli/gmailctl"
+	"github.com/wesnick/gwcli/pkg/gwcli/gmailctl"
 	"google.golang.org/api/gmail/v1"
 )
 

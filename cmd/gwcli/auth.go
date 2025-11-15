@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/wesnick/cmdg/pkg/gwcli"
+	"github.com/wesnick/gwcli/pkg/gwcli"
 )
 
 // tokenInfoOutput is JSON output for token info
@@ -26,7 +26,7 @@ type tokenInfoOutput struct {
 }
 
 // runAuthTokenInfo retrieves and displays information about the current OAuth token
-func runAuthTokenInfo(ctx context.Context, conn *cmdg.CmdG, out *outputWriter) error {
+func runAuthTokenInfo(ctx context.Context, conn *gwcli.CmdG, out *outputWriter) error {
 	// Get token information
 	out.writeVerbose("Fetching token information...")
 	tokenInfo, err := conn.GetTokenInfo(ctx)

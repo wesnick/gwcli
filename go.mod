@@ -1,4 +1,4 @@
-module github.com/wesnick/cmdg
+module github.com/wesnick/gwcli
 
 go 1.23.7
 

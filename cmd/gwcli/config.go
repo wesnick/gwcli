@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/wesnick/cmdg/pkg/gwcli"
+	"github.com/wesnick/gwcli/pkg/gwcli"
 )
 
 // getConnection creates a CmdG connection with authentication
