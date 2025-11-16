@@ -7,16 +7,16 @@ default:
 # Build gwcli binary
 build:
     mkdir -p dist
-    go build -o dist/gwcli ./cmd/gwcli
+    go build -o dist/gwcli .
 
 # Build with version info
 build-version VERSION:
     mkdir -p dist
-    go build -ldflags "-X main.version={{VERSION}}" -o dist/gwcli ./cmd/gwcli
+    go build -ldflags "-X main.version={{VERSION}}" -o dist/gwcli .
 
 # Install gwcli to GOPATH/bin
 install:
-    go install ./cmd/gwcli
+    go install .
 
 # Run tests
 test:
@@ -39,7 +39,7 @@ clean:
 
 # Run gwcli with arguments
 run *ARGS:
-    go run ./cmd/gwcli {{ARGS}}
+    go run . {{ARGS}}
 
 # Build and run gwcli
 build-run *ARGS: build
@@ -47,21 +47,21 @@ build-run *ARGS: build
 
 # Show version
 version:
-    @go run ./cmd/gwcli version
+    @go run . version
 
 # Run configure
 configure:
-    go run ./cmd/gwcli configure
+    go run . configure
 
 # Gmailctl helpers
 gmailctl-download *ARGS:
-    go run ./cmd/gwcli gmailctl download {{ARGS}}
+    go run . gmailctl download {{ARGS}}
 
 gmailctl-apply *ARGS:
-    go run ./cmd/gwcli gmailctl apply {{ARGS}}
+    go run . gmailctl apply {{ARGS}}
 
 gmailctl-diff *ARGS:
-    go run ./cmd/gwcli gmailctl diff {{ARGS}}
+    go run . gmailctl diff {{ARGS}}
 
 # Format Go code
 fmt:

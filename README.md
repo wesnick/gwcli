@@ -71,13 +71,13 @@ gwcli messages search "from:example.com" --json | jq '.[] | .subject'
 ### Building from source
 
 ```bash
-go build ./cmd/gwcli
+go build .
 sudo cp gwcli /usr/local/bin
 ```
 
 ## Setup Protocol
 
-1. **Build or install gwcli** – `just build` writes `dist/gwcli`, or `go install ./cmd/gwcli` drops the binary in your `GOBIN`.
+1. **Build or install gwcli** – `just build` writes `dist/gwcli`, or `go install .` drops the binary in your `GOBIN`.
 2. **Install gmailctl** – `go install github.com/mbrt/gmailctl/cmd/gmailctl@latest` and confirm `gmailctl version` works; gwcli shells out to this binary.
 3. **Prepare the config directory** – `mkdir -p ~/.config/gwcli` and copy in `credentials.json`, `token.json` (OAuth only), and `config.jsonnet`. If you already have gmailctl state, symlink or copy it into this path.
 4. **Authorize** – For personal Gmail, run `just configure` (wrapper for `gwcli configure`) to generate `token.json`. For Workspace service accounts, skip this and plan to pass `--user you@example.com` on every gwcli invocation.
