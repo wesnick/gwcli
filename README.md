@@ -75,59 +75,55 @@ go build ./cmd/gwcli
 sudo cp gwcli /usr/local/bin
 ```
 
+## Setup Protocol
+
+1. **Build or install gwcli** – `just build` writes `dist/gwcli`, or `go install ./cmd/gwcli` drops the binary in your `GOBIN`.
+2. **Install gmailctl** – `go install github.com/mbrt/gmailctl/cmd/gmailctl@latest` and confirm `gmailctl version` works; gwcli shells out to this binary.
+3. **Prepare the config directory** – `mkdir -p ~/.config/gwcli` and copy in `credentials.json`, `token.json` (OAuth only), and `config.jsonnet`. If you already have gmailctl state, symlink or copy it into this path.
+4. **Authorize** – For personal Gmail, run `just configure` (wrapper for `gwcli configure`) to generate `token.json`. For Workspace service accounts, skip this and plan to pass `--user you@example.com` on every gwcli invocation.
+5. **Sync gmailctl state** – `just gmailctl-download` pulls the current Gmail filters, edit `~/.config/gwcli/config.jsonnet`, and then run `just gmailctl-diff` / `just gmailctl-apply` to preview and push updates.
+6. **Use gwcli commands** – e.g., `gwcli messages list`, `gwcli --user admin@example.com labels list`, or `gwcli auth token-info` once authentication succeeds.
+
 ## Configuring
 
-gwcli uses OAuth2 for authentication. Follow these steps to set up:
+gwcli reads all authentication material and gmailctl rules from `~/.config/gwcli/`. Pick the authentication path that matches your account type and place the files called out below.
 
-### Step 1: Create OAuth Credentials
+### OAuth (Desktop flow)
 
-1. Go to the [Google Developers Console](https://console.developers.google.com/apis)
-2. Create a new project (or select an existing one)
-3. Enable the **Gmail API**:
-   - Visit `https://console.developers.google.com/apis/api/gmail.googleapis.com/overview`
-4. Configure the **OAuth consent screen**:
-   - Add your email as a test user
-   - Add these scopes:
-     - `https://www.googleapis.com/auth/gmail.modify`
-     - `https://www.googleapis.com/auth/gmail.settings.basic`
-     - `https://www.googleapis.com/auth/gmail.labels`
-5. Create **OAuth 2.0 Client ID**:
-   - Navigate to "Credentials" page
-   - Click "+ CREATE CREDENTIALS" → "OAuth client ID"
-   - Select "Desktop app" as application type
-   - Click "CREATE"
-6. **Download the credentials**:
-   - Click the download button (⬇) next to your newly created OAuth client
-   - Save the file as `~/.config/gwcli/credentials.json`
+1. Visit the [Google Cloud Console](https://console.developers.google.com/), create (or reuse) a project, and enable the **Gmail API**.
+2. Configure the OAuth consent screen and add the scopes gwcli needs:
+   - `https://www.googleapis.com/auth/gmail.modify`
+   - `https://www.googleapis.com/auth/gmail.settings.basic`
+   - `https://www.googleapis.com/auth/gmail.labels`
+3. Create an **OAuth Client ID** of type *Desktop app* and download the JSON credentials to `~/.config/gwcli/credentials.json`.
+4. Run `gwcli configure` (or `just configure`) to finish the flow. The command prints a URL, prompts for the returned code, and writes `token.json` in the same directory.
 
-### Step 2: Authorize gwcli
+Once both files exist you can run every command with your personal Gmail account.
 
-Run the configuration command:
+### Service Accounts (Google Workspace)
 
-```bash
-gwcli configure
-```
+gwcli can reuse gmailctl’s service-account authenticator to impersonate Workspace users:
 
-This will:
-1. Check for `credentials.json` in `~/.config/gwcli/`
-2. Display a Google authorization URL
-3. Ask you to paste the authorization code
-4. Save the access token to `~/.config/gwcli/token.json`
-
-After this, you can use all gwcli commands.
+1. In the Cloud Console, create a Service Account, enable **Domain-wide Delegation**, and download the JSON key to `~/.config/gwcli/credentials.json`.
+2. In the Admin Console (`Security → API controls → Domain-wide delegation`) authorize the client ID from the JSON file with the scopes above.
+3. Skip `gwcli configure` (service accounts do not use OAuth tokens). Instead, pass `--user user@example.com` to every gwcli command to select the mailbox:
+   ```bash
+   gwcli --user ops@example.com messages list --label SRE
+   ```
+4. Rotate the service-account key the same way you would for gmailctl; gwcli simply streams the file on every invocation.
 
 ### Configuration Files
 
 gwcli stores configuration in `~/.config/gwcli/`:
-- `credentials.json` - OAuth client credentials (you provide this)
-- `token.json` - OAuth access/refresh tokens (auto-generated)
-- `config.jsonnet` - Optional label definitions (gmailctl format)
+- `credentials.json` – OAuth or service-account credentials (you provide this)
+- `token.json` – OAuth access/refresh tokens (auto-generated during `gwcli configure`)
+- `config.jsonnet` – gmailctl label/filter definitions that gwcli consumes at startup
 
-**Note:** gwcli uses gmailctl-compatible OAuth scopes and config format, so it can coexist with gmailctl installations.
+**Note:** gwcli embeds gmailctl’s config reader, so the same Jsonnet file powers both tools.
 
 ## gmailctl Integration
 
-gwcli integrates with [gmailctl](https://github.com/mbrt/gmailctl) for advanced filter and label management. gmailctl allows you to define Gmail filters and labels in a Jsonnet configuration file, which gwcli automatically uses for label definitions.
+gwcli vendors gmailctl's config reader and authentication helpers so both tools operate on the same Jsonnet file and credential set. The CLI refuses to start label-aware commands unless `~/.config/gwcli/config.jsonnet` exists, ensuring every run honors the labels and filters checked into gmailctl.
 
 ### Configuration File
 
@@ -157,6 +153,8 @@ Example `config.jsonnet`:
 ### Using gmailctl Commands
 
 gwcli provides built-in wrappers for the most common gmailctl operations. These commands automatically use gwcli's config directory (`~/.config/gwcli`), so you don't need to specify `--config` flags.
+
+If you prefer task shortcuts, the `just gmailctl-download`, `just gmailctl-diff`, and `just gmailctl-apply` recipes simply call the corresponding gwcli subcommands.
 
 #### Download existing filters from Gmail
 
@@ -223,16 +221,16 @@ Typical workflow for managing labels and filters:
 
 ```bash
 # 1. Download your current Gmail filters
-gwcli gmailctl download
+just gmailctl-download
 
 # 2. Edit config.jsonnet in your favorite editor
 vim ~/.config/gwcli/config.jsonnet
 
 # 3. Preview changes before applying
-gwcli gmailctl diff
+just gmailctl-diff
 
 # 4. Apply the changes to Gmail
-gwcli gmailctl apply
+just gmailctl-apply
 
 # 5. Use the labels in gwcli
 gwcli messages list --label work
@@ -300,15 +298,17 @@ gwcli messages send \
 # List all labels
 gwcli labels list
 
-# Create a label
-gwcli labels create "MyLabel"
-
 # Apply label to message
 gwcli labels apply "MyLabel" --message <message-id>
 
 # Batch apply label (via stdin)
 echo "msg1\nmsg2\nmsg3" | gwcli labels apply "Archive" --stdin
+
+# Remove a label from a message
+gwcli labels remove "Archive" --message <message-id>
 ```
+
+**Note:** Label and filter definitions come from `config.jsonnet`. Create, rename, or delete labels through gmailctl (`just gmailctl-download` → edit → `just gmailctl-apply`) so gwcli stays in sync.
 
 ### Attachments
 

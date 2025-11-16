@@ -53,6 +53,16 @@ version:
 configure:
     go run ./cmd/gwcli configure
 
+# Gmailctl helpers
+gmailctl-download *ARGS:
+    go run ./cmd/gwcli gmailctl download {{ARGS}}
+
+gmailctl-apply *ARGS:
+    go run ./cmd/gwcli gmailctl apply {{ARGS}}
+
+gmailctl-diff *ARGS:
+    go run ./cmd/gwcli gmailctl diff {{ARGS}}
+
 # Format Go code
 fmt:
     go fmt ./...
