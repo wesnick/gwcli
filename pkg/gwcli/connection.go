@@ -86,6 +86,7 @@ type CmdG struct {
 	people       *people.Service
 	messageCache map[string]*Message
 	labelCache   map[string]*Label
+	labelsLoaded bool // tracks whether labels have been loaded from config
 	contacts     []string
 	settings     Settings
 	configPaths  *ConfigPaths
@@ -314,6 +315,14 @@ func logRPC(st time.Time, err error, s string, args ...interface{}) {
 
 // LoadLabels batch loads all labels into the cache from config.jsonnet.
 func (c *CmdG) LoadLabels(ctx context.Context, verbose bool) error {
+	// Check if already loaded (with read lock to avoid unnecessary work)
+	c.m.RLock()
+	if c.labelsLoaded {
+		c.m.RUnlock()
+		return nil
+	}
+	c.m.RUnlock()
+
 	st := time.Now()
 
 	// Read labels from config.jsonnet (required - no API fallback)
@@ -336,6 +345,26 @@ func (c *CmdG) LoadLabels(ctx context.Context, verbose bool) error {
 
 	c.m.Lock()
 	defer c.m.Unlock()
+
+	// Fetch all labels from Gmail API to get actual label IDs
+	var gmailLabels []*gmail.Label
+	err = wrapLogRPC("gmail.Users.Labels.List", func() (err error) {
+		var resp *gmail.ListLabelsResponse
+		resp, err = c.gmail.Users.Labels.List(email).Context(ctx).Do()
+		if err == nil {
+			gmailLabels = resp.Labels
+		}
+		return
+	}, "email=%q", email)
+	if err != nil {
+		return fmt.Errorf("failed to fetch labels from Gmail API: %w", err)
+	}
+
+	// Build a map of label names to Gmail API label IDs
+	gmailLabelsByName := make(map[string]*gmail.Label)
+	for _, gl := range gmailLabels {
+		gmailLabelsByName[gl.Name] = gl
+	}
 
 	// Add system labels first (Gmail built-ins that should always be available)
 	systemLabels := map[string]string{
@@ -366,18 +395,22 @@ func (c *CmdG) LoadLabels(ctx context.Context, verbose bool) error {
 		}
 	}
 
-	// Add labels from config.jsonnet
+	// Add labels from config.jsonnet, using actual Gmail API label IDs
 	for _, l := range cfg.Labels {
-		// Use the label name as the ID for user-defined labels
-		// This makes label resolution work seamlessly
-		c.labelCache[l.Name] = &Label{
-			ID:    l.Name,
-			Label: l.Name,
-			Response: &gmail.Label{
-				Id:   l.Name,
-				Name: l.Name,
-				Type: "user",
-			},
+		// Look up the actual label ID from Gmail API
+		gmailLabel, found := gmailLabelsByName[l.Name]
+		if !found {
+			if verbose {
+				log.Warnf("Label '%s' from config.jsonnet not found in Gmail - skipping", l.Name)
+			}
+			continue
+		}
+
+		// Use the actual Gmail API label ID
+		c.labelCache[gmailLabel.Id] = &Label{
+			ID:    gmailLabel.Id,
+			Label: gmailLabel.Name,
+			Response: gmailLabel,
 		}
 	}
 
@@ -388,11 +421,27 @@ func (c *CmdG) LoadLabels(ctx context.Context, verbose bool) error {
 		log.Infof("Loaded %d labels in %v", len(c.labelCache), time.Since(st))
 	}
 
+	// Mark labels as loaded
+	c.labelsLoaded = true
+
 	return nil
 }
 
 // Labels returns a list of all labels.
+// Labels are lazily loaded from config.jsonnet on first access.
 func (c *CmdG) Labels() []*Label {
+	// Check if labels need to be loaded
+	c.m.RLock()
+	loaded := c.labelsLoaded
+	c.m.RUnlock()
+
+	// Lazy load labels if not yet loaded
+	if !loaded {
+		// Use background context and non-verbose mode for lazy loading
+		// Errors are silently ignored - empty label list is returned
+		_ = c.LoadLabels(context.Background(), false)
+	}
+
 	c.m.RLock()
 	defer c.m.RUnlock()
 	var ret []*Label
