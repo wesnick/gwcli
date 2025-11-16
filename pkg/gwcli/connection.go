@@ -14,6 +14,7 @@ import (
 	"net/textproto"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -85,6 +86,7 @@ type CmdG struct {
 	people       *people.Service
 	messageCache map[string]*Message
 	labelCache   map[string]*Label
+	labelsLoaded bool // tracks whether labels have been loaded from config
 	contacts     []string
 	settings     Settings
 	configPaths  *ConfigPaths
@@ -313,6 +315,14 @@ func logRPC(st time.Time, err error, s string, args ...interface{}) {
 
 // LoadLabels batch loads all labels into the cache from config.jsonnet.
 func (c *CmdG) LoadLabels(ctx context.Context, verbose bool) error {
+	// Check if already loaded (with read lock to avoid unnecessary work)
+	c.m.RLock()
+	if c.labelsLoaded {
+		c.m.RUnlock()
+		return nil
+	}
+	c.m.RUnlock()
+
 	st := time.Now()
 
 	// Read labels from config.jsonnet (required - no API fallback)
@@ -335,6 +345,26 @@ func (c *CmdG) LoadLabels(ctx context.Context, verbose bool) error {
 
 	c.m.Lock()
 	defer c.m.Unlock()
+
+	// Fetch all labels from Gmail API to get actual label IDs
+	var gmailLabels []*gmail.Label
+	err = wrapLogRPC("gmail.Users.Labels.List", func() (err error) {
+		var resp *gmail.ListLabelsResponse
+		resp, err = c.gmail.Users.Labels.List(email).Context(ctx).Do()
+		if err == nil {
+			gmailLabels = resp.Labels
+		}
+		return
+	}, "email=%q", email)
+	if err != nil {
+		return fmt.Errorf("failed to fetch labels from Gmail API: %w", err)
+	}
+
+	// Build a map of label names to Gmail API label IDs
+	gmailLabelsByName := make(map[string]*gmail.Label)
+	for _, gl := range gmailLabels {
+		gmailLabelsByName[gl.Name] = gl
+	}
 
 	// Add system labels first (Gmail built-ins that should always be available)
 	systemLabels := map[string]string{
@@ -365,18 +395,22 @@ func (c *CmdG) LoadLabels(ctx context.Context, verbose bool) error {
 		}
 	}
 
-	// Add labels from config.jsonnet
+	// Add labels from config.jsonnet, using actual Gmail API label IDs
 	for _, l := range cfg.Labels {
-		// Use the label name as the ID for user-defined labels
-		// This makes label resolution work seamlessly
-		c.labelCache[l.Name] = &Label{
-			ID:    l.Name,
-			Label: l.Name,
-			Response: &gmail.Label{
-				Id:   l.Name,
-				Name: l.Name,
-				Type: "user",
-			},
+		// Look up the actual label ID from Gmail API
+		gmailLabel, found := gmailLabelsByName[l.Name]
+		if !found {
+			if verbose {
+				log.Warnf("Label '%s' from config.jsonnet not found in Gmail - skipping", l.Name)
+			}
+			continue
+		}
+
+		// Use the actual Gmail API label ID
+		c.labelCache[gmailLabel.Id] = &Label{
+			ID:    gmailLabel.Id,
+			Label: gmailLabel.Name,
+			Response: gmailLabel,
 		}
 	}
 
@@ -387,11 +421,27 @@ func (c *CmdG) LoadLabels(ctx context.Context, verbose bool) error {
 		log.Infof("Loaded %d labels in %v", len(c.labelCache), time.Since(st))
 	}
 
+	// Mark labels as loaded
+	c.labelsLoaded = true
+
 	return nil
 }
 
 // Labels returns a list of all labels.
+// Labels are lazily loaded from config.jsonnet on first access.
 func (c *CmdG) Labels() []*Label {
+	// Check if labels need to be loaded
+	c.m.RLock()
+	loaded := c.labelsLoaded
+	c.m.RUnlock()
+
+	// Lazy load labels if not yet loaded
+	if !loaded {
+		// Use background context and non-verbose mode for lazy loading
+		// Errors are silently ignored - empty label list is returned
+		_ = c.LoadLabels(context.Background(), false)
+	}
+
 	c.m.RLock()
 	defer c.m.RUnlock()
 	var ret []*Label
@@ -442,6 +492,68 @@ type TokenInfo struct {
 	Audience      string   `json:"aud"`
 	IssuedTo      string   `json:"issued_to"`
 	AppName       string   `json:"app_name"`
+}
+
+// UnmarshalJSON allows TokenInfo to accept either numeric or quoted numeric expires_in values.
+func (t *TokenInfo) UnmarshalJSON(data []byte) error {
+	type tokenInfoAlias struct {
+		Email         string          `json:"email"`
+		EmailVerified bool            `json:"email_verified"`
+		ExpiresIn     json.RawMessage `json:"expires_in"`
+		Scope         string          `json:"scope"`
+		Scopes        []string        `json:"scopes"`
+		UserID        string          `json:"user_id"`
+		Audience      string          `json:"aud"`
+		IssuedTo      string          `json:"issued_to"`
+		AppName       string          `json:"app_name"`
+	}
+
+	var aux tokenInfoAlias
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	expiresIn, err := parseFlexibleInt64(aux.ExpiresIn)
+	if err != nil {
+		return errors.Wrap(err, "parsing expires_in")
+	}
+
+	t.Email = aux.Email
+	t.EmailVerified = aux.EmailVerified
+	t.ExpiresIn = expiresIn
+	t.Scope = aux.Scope
+	t.Scopes = aux.Scopes
+	t.UserID = aux.UserID
+	t.Audience = aux.Audience
+	t.IssuedTo = aux.IssuedTo
+	t.AppName = aux.AppName
+
+	return nil
+}
+
+func parseFlexibleInt64(data json.RawMessage) (int64, error) {
+	if len(data) == 0 {
+		return 0, nil
+	}
+
+	var numeric int64
+	if err := json.Unmarshal(data, &numeric); err == nil {
+		return numeric, nil
+	}
+
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		if str == "" {
+			return 0, nil
+		}
+		v, err := strconv.ParseInt(str, 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		return v, nil
+	}
+
+	return 0, errors.Errorf("expires_in must be number or quoted number, got %s", string(data))
 }
 
 // GetTokenInfo retrieves information about the current OAuth token.
@@ -522,9 +634,10 @@ func ParseUserMessage(in string) (mail.Header, *Part, error) {
 
 // SendParts sends a multipart message.
 // Args:
-//   mp:    multipart type. "mixed" is a typical type.
-//   head:  Email header.
-//   parts: Email parts.
+//
+//	mp:    multipart type. "mixed" is a typical type.
+//	head:  Email header.
+//	parts: Email parts.
 func (c *CmdG) SendParts(ctx context.Context, threadID ThreadID, mp string, head mail.Header, parts []*Part) error {
 	var mbuf bytes.Buffer
 	w := multipart.NewWriter(&mbuf)

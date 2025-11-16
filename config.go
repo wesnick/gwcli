@@ -14,12 +14,6 @@ func getConnection(configDir string, userEmail string, verbose bool) (*gwcli.Cmd
 		return nil, fmt.Errorf("failed to create connection: %w", err)
 	}
 
-	// Load labels so they're available for label-based operations
-	ctx := context.Background()
-	if err := conn.LoadLabels(ctx, verbose); err != nil {
-		return nil, fmt.Errorf("failed to load labels: %w", err)
-	}
-
 	return conn, nil
 }
 
