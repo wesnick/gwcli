@@ -14,6 +14,7 @@ import (
 	"net/textproto"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -444,6 +445,68 @@ type TokenInfo struct {
 	AppName       string   `json:"app_name"`
 }
 
+// UnmarshalJSON allows TokenInfo to accept either numeric or quoted numeric expires_in values.
+func (t *TokenInfo) UnmarshalJSON(data []byte) error {
+	type tokenInfoAlias struct {
+		Email         string          `json:"email"`
+		EmailVerified bool            `json:"email_verified"`
+		ExpiresIn     json.RawMessage `json:"expires_in"`
+		Scope         string          `json:"scope"`
+		Scopes        []string        `json:"scopes"`
+		UserID        string          `json:"user_id"`
+		Audience      string          `json:"aud"`
+		IssuedTo      string          `json:"issued_to"`
+		AppName       string          `json:"app_name"`
+	}
+
+	var aux tokenInfoAlias
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	expiresIn, err := parseFlexibleInt64(aux.ExpiresIn)
+	if err != nil {
+		return errors.Wrap(err, "parsing expires_in")
+	}
+
+	t.Email = aux.Email
+	t.EmailVerified = aux.EmailVerified
+	t.ExpiresIn = expiresIn
+	t.Scope = aux.Scope
+	t.Scopes = aux.Scopes
+	t.UserID = aux.UserID
+	t.Audience = aux.Audience
+	t.IssuedTo = aux.IssuedTo
+	t.AppName = aux.AppName
+
+	return nil
+}
+
+func parseFlexibleInt64(data json.RawMessage) (int64, error) {
+	if len(data) == 0 {
+		return 0, nil
+	}
+
+	var numeric int64
+	if err := json.Unmarshal(data, &numeric); err == nil {
+		return numeric, nil
+	}
+
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		if str == "" {
+			return 0, nil
+		}
+		v, err := strconv.ParseInt(str, 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		return v, nil
+	}
+
+	return 0, errors.Errorf("expires_in must be number or quoted number, got %s", string(data))
+}
+
 // GetTokenInfo retrieves information about the current OAuth token.
 func (c *CmdG) GetTokenInfo(ctx context.Context) (*TokenInfo, error) {
 	// Use the authenticated client to make a request to the tokeninfo endpoint
@@ -522,9 +585,10 @@ func ParseUserMessage(in string) (mail.Header, *Part, error) {
 
 // SendParts sends a multipart message.
 // Args:
-//   mp:    multipart type. "mixed" is a typical type.
-//   head:  Email header.
-//   parts: Email parts.
+//
+//	mp:    multipart type. "mixed" is a typical type.
+//	head:  Email header.
+//	parts: Email parts.
 func (c *CmdG) SendParts(ctx context.Context, threadID ThreadID, mp string, head mail.Header, parts []*Part) error {
 	var mbuf bytes.Buffer
 	w := multipart.NewWriter(&mbuf)
