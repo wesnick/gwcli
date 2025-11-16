@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Build the binary
-go build -o gwcli ./cmd/gwcli
+go build -o gwcli .
 # OR use justfile
 just build
 
@@ -21,11 +21,11 @@ go test ./...
 just test
 
 # Run without building
-go run ./cmd/gwcli <subcommand>
+go run . <subcommand>
 just run <subcommand>
 
 # Install to GOPATH/bin
-go install ./cmd/gwcli
+go install .
 just install
 
 # Format and lint
@@ -53,7 +53,7 @@ go test -v ./...
 
 ### Command Structure (Kong CLI)
 
-The CLI uses **Kong** for command parsing (not Cobra). Command definitions are in `cmd/gwcli/main.go` as a struct:
+The CLI uses **Kong** for command parsing (not Cobra). Command definitions are in `main.go` as a struct:
 
 ```go
 type CLI struct {
@@ -81,7 +81,7 @@ The `CmdG` struct is the central object passed to all command handlers.
 
 **`pkg/cmdg/configure.go`** handles OAuth2 setup flow.
 
-### Command Handlers (cmd/gwcli/)
+### Command Handlers (root directory)
 
 - **`messages.go`** - All message operations (list, read, search, send, delete, mark read/unread)
 - **`labels.go`** - Label operations (list, create, delete, apply, remove)
@@ -277,7 +277,7 @@ gmailctl edit
 
 gwcli integrates with gmailctl for filter and label management. It includes wrapper commands that automatically inject the `--config` flag to use gwcli's config directory.
 
-**Wrapper Commands (in cmd/gwcli/gmailctl.go):**
+**Wrapper Commands (in gmailctl.go):**
 - `gwcli gmailctl download [-o file]` - Download filters from Gmail to config.jsonnet
 - `gwcli gmailctl apply [-y]` - Apply config.jsonnet to Gmail (with optional skip confirmation)
 - `gwcli gmailctl diff` - Show diff between local config and Gmail
