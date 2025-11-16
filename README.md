@@ -68,11 +68,28 @@ gwcli messages search "from:example.com" --json | jq '.[] | .subject'
 
 ## Installing
 
+### Using go install (recommended)
+
+Install directly from GitHub:
+
+```bash
+go install github.com/wesnick/gwcli@latest
+```
+
+This will install `gwcli` to your `$GOPATH/bin` or `$GOBIN` directory. Make sure this directory is in your `PATH`.
+
 ### Building from source
 
 ```bash
 go build .
 sudo cp gwcli /usr/local/bin
+```
+
+Or use the justfile:
+
+```bash
+just build
+sudo cp dist/gwcli /usr/local/bin
 ```
 
 ## Setup Protocol

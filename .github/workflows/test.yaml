@@ -20,7 +20,7 @@ jobs:
       - name: Build binary
         run: |
            mkdir -p dist
-           go build -o dist/gwcli ./cmd/gwcli
+           go build -o dist/gwcli .
       - name: Vet
         run:
            go vet ./...

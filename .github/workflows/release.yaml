@@ -45,7 +45,7 @@ jobs:
       - name: Build binary
         run: |
            mkdir -p dist
-           go build -o 'dist/gwcli-${{ matrix.platform }}' ./cmd/gwcli
+           go build -o 'dist/gwcli-${{ matrix.platform }}' .
 
       - name: Release binary
         uses: softprops/action-gh-release@v2
