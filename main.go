@@ -130,6 +130,9 @@ func main() {
 		kong.Name("gwcli"),
 		kong.Description("Command-line Gmail client"),
 		kong.UsageOnError(),
+		kong.ConfigureHelp(kong.HelpOptions{
+			Compact: true,
+		}),
 	)
 
 	out := newOutputWriter(cli.JSON, cli.NoColor, cli.Verbose)
