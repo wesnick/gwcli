@@ -408,8 +408,8 @@ func (c *CmdG) LoadLabels(ctx context.Context, verbose bool) error {
 
 		// Use the actual Gmail API label ID
 		c.labelCache[gmailLabel.Id] = &Label{
-			ID:    gmailLabel.Id,
-			Label: gmailLabel.Name,
+			ID:       gmailLabel.Id,
+			Label:    gmailLabel.Name,
 			Response: gmailLabel,
 		}
 	}
@@ -558,6 +558,10 @@ func parseFlexibleInt64(data json.RawMessage) (int64, error) {
 
 // GetTokenInfo retrieves information about the current OAuth token.
 func (c *CmdG) GetTokenInfo(ctx context.Context) (*TokenInfo, error) {
+	if c.authedClient == nil {
+		return nil, errors.New("token info not available for service account authentication")
+	}
+
 	// Use the authenticated client to make a request to the tokeninfo endpoint
 	req, err := http.NewRequestWithContext(ctx, "GET", "https://oauth2.googleapis.com/tokeninfo", nil)
 	if err != nil {
