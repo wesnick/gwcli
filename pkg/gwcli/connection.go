@@ -145,7 +145,8 @@ func readConf(fn string) (Config, error) {
 // New creates a new CmdG with gmailctl-style authentication.
 // configDir should point to the directory containing credentials.json and token.json
 // userEmail is only required when using service account authentication (for user impersonation)
-func New(configDir string, userEmail string) (*CmdG, error) {
+// verbose enables detailed logging of the connection setup process
+func New(configDir string, userEmail string, verbose bool) (*CmdG, error) {
 	conn := &CmdG{
 		messageCache: make(map[string]*Message),
 		labelCache:   make(map[string]*Label),
@@ -157,11 +158,22 @@ func New(configDir string, userEmail string) (*CmdG, error) {
 		return nil, err
 	}
 
+	if verbose {
+		log.Infof("Config paths resolved:")
+		log.Infof("  Directory: %s", paths.Dir)
+		log.Infof("  Credentials: %s", paths.Credentials)
+		log.Infof("  Token: %s", paths.Token)
+		log.Infof("  Config: %s", paths.Config)
+	}
+
 	// Store config paths for later use (e.g., loading labels from config.jsonnet)
 	conn.configPaths = paths
 
 	// Initialize Gmail service using gmailctl authentication
 	ctx := context.Background()
+	if verbose {
+		log.Infof("Initializing Gmail authentication...")
+	}
 	gmailSvc, err := InitializeAuth(ctx, paths, userEmail)
 	if err != nil {
 		return nil, err
@@ -182,11 +194,22 @@ func New(configDir string, userEmail string) (*CmdG, error) {
 		return nil, errors.Wrapf(err, "detecting credential type")
 	}
 
+	if verbose {
+		if isServiceAcct {
+			log.Infof("Authentication type: Service Account")
+		} else {
+			log.Infof("Authentication type: OAuth2")
+		}
+	}
+
 	// Service accounts don't need Drive/People client setup (no token file)
 	if isServiceAcct {
 		// For service accounts, we can't set up Drive and People APIs the same way
 		// Just set up the Gmail client which we already have
 		conn.authedClient = nil // Service accounts don't use the same auth flow
+		if verbose {
+			log.Infof("Service account connection ready")
+		}
 		return conn, nil
 	}
 
@@ -214,6 +237,10 @@ func New(configDir string, userEmail string) (*CmdG, error) {
 	}
 
 	conn.authedClient = cfg.Client(ctx, &tok)
+
+	if verbose {
+		log.Infof("OAuth connection ready")
+	}
 
 	// Set up Drive and People services (note: gwcli doesn't actively use these,
 	// but keeping them for compatibility with old cmdg code)

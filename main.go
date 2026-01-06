@@ -117,11 +117,12 @@ type CLI struct {
 		} `cmd:"" help:"Download filters from Gmail to config file"`
 
 		Apply struct {
-			Yes bool `short:"y" help:"Skip confirmation prompt"`
+			Yes          bool `short:"y" help:"Skip confirmation prompt"`
+			RemoveLabels bool `help:"Allow removing labels not in config" name:"remove-labels"`
 		} `cmd:"" help:"Apply config.jsonnet to Gmail filters"`
 
 		Diff struct{} `cmd:"" help:"Show diff between local config and Gmail"`
-	} `cmd:"" help:"gmailctl filter management (requires gmailctl installed)"`
+	} `cmd:"" help:"gmailctl filter management"`
 }
 
 func main() {
@@ -334,19 +335,22 @@ func main() {
 		}
 
 	case "gmailctl download":
-		if err := runGmailctlDownload(cli.Config, cli.Gmailctl.Download.Output, out); err != nil {
+		cmdCtx := context.Background()
+		if err := runGmailctlDownload(cmdCtx, cli.Config, cli.User, cli.Gmailctl.Download.Output, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
 
 	case "gmailctl apply":
-		if err := runGmailctlApply(cli.Config, cli.Gmailctl.Apply.Yes, out); err != nil {
+		cmdCtx := context.Background()
+		if err := runGmailctlApply(cmdCtx, cli.Config, cli.User, cli.Gmailctl.Apply.Yes, cli.Gmailctl.Apply.RemoveLabels, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
 
 	case "gmailctl diff":
-		if err := runGmailctlDiff(cli.Config, out); err != nil {
+		cmdCtx := context.Background()
+		if err := runGmailctlDiff(cmdCtx, cli.Config, cli.User, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
