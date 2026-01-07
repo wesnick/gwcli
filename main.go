@@ -113,7 +113,8 @@ type CLI struct {
 
 	Gmailctl struct {
 		Download struct {
-			Output string `short:"o" help:"Output file" default:"config.jsonnet"`
+			Output string `short:"o" help:"Output file (default: config.jsonnet in config directory)"`
+			Yes    bool   `short:"y" help:"Skip overwrite confirmation prompt"`
 		} `cmd:"" help:"Download filters from Gmail to config file"`
 
 		Apply struct {
@@ -336,7 +337,7 @@ func main() {
 
 	case "gmailctl download":
 		cmdCtx := context.Background()
-		if err := runGmailctlDownload(cmdCtx, cli.Config, cli.User, cli.Gmailctl.Download.Output, out); err != nil {
+		if err := runGmailctlDownload(cmdCtx, cli.Config, cli.User, cli.Gmailctl.Download.Output, cli.Gmailctl.Download.Yes, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
