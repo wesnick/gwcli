@@ -1,18 +1,22 @@
-# gwcli - Command-line Gmail Client
+# gwcli - Command-line Gmail & Google Tasks Client
 
-A command-line interface for Gmail, optimized for non-interactive use, shell scripting, and AI agent integration.
+A command-line interface for Gmail and Google Tasks, optimized for non-interactive use, shell scripting, and AI agent integration.
 
-## About This Fork
+## About This Project
 
-This is a fork of [cmdg](https://github.com/ThomasHabets/cmdg) by Thomas Habets.
+gwcli combines functionality from three open-source projects:
 
-**Key differences from original cmdg:**
-- **Removed TUI (Text User Interface)** - cmdg was a Pine/Alpine-like interactive email client
-- **Pure CLI tool** - gwcli is designed for shell scripting and piping to other tools
-- **No lynx dependency** - HTML emails are output as raw HTML, pipe to `html2md` or similar tools
-- **Simplified for automation** - All commands work non-interactively
+| Project | Author | What gwcli uses |
+|---------|--------|-----------------|
+| [cmdg](https://github.com/ThomasHabets/cmdg) | Thomas Habets | Gmail API client, message handling, and core architecture (TUI removed) |
+| [gmailctl](https://github.com/mbrt/gmailctl) | Michele Bertasi | Authentication system, label/filter management, Jsonnet config parsing |
+| [gtasks](https://github.com/BRO3886/gtasks) | Siddhartha Varma | Google Tasks API integration patterns |
 
-Original cmdg: Copyright Thomas Habets <thomas@habets.se> 2015-2021
+**Key characteristics:**
+- **Pure CLI tool** - Designed for shell scripting and piping to other tools (no TUI)
+- **Non-interactive** - All commands work without user interaction
+- **Unified authentication** - Single credential set for Gmail and Tasks APIs
+- **gmailctl compatible** - Uses same Jsonnet config format for labels and filters
 
 ## License
 
@@ -20,32 +24,76 @@ This software is dual-licensed GPL and "Thomas is allowed to release a binary ve
 
 See [LICENSE](LICENSE) for full GPL v2 text.
 
+Additional components:
+- gmailctl code: MIT License (Copyright Michele Bertasi)
+- gtasks patterns: Apache License 2.0 (Copyright Siddhartha Varma)
+
+## OAuth Scopes
+
+gwcli requires the following OAuth 2.0 scopes. When setting up OAuth credentials in Google Cloud Console or authorizing domain-wide delegation for service accounts, you must enable all four scopes.
+
+### Required Scopes
+
+| Scope | Description | Classification |
+|-------|-------------|----------------|
+| `https://www.googleapis.com/auth/gmail.modify` | Read/write all messages and threads (except permanent deletion) | Restricted |
+| `https://www.googleapis.com/auth/gmail.settings.basic` | Manage basic mail settings | Restricted |
+| `https://www.googleapis.com/auth/gmail.labels` | Create, read, update, and delete labels | Non-sensitive |
+| `https://www.googleapis.com/auth/tasks` | Create, edit, organize, and delete tasks | Sensitive |
+
+### Command-to-Scope Matrix
+
+This table shows which scopes are required for each command group:
+
+| Command | `gmail.modify` | `gmail.settings.basic` | `gmail.labels` | `tasks` |
+|---------|:--------------:|:----------------------:|:--------------:|:-------:|
+| **Messages** |
+| `messages list` | Required | - | - | - |
+| `messages read` | Required | - | - | - |
+| `messages search` | Required | - | - | - |
+| `messages send` | Required | - | - | - |
+| `messages delete` | Required | - | - | - |
+| `messages mark-read` | Required | - | - | - |
+| `messages mark-unread` | Required | - | - | - |
+| `messages move` | Required | - | - | - |
+| **Labels** |
+| `labels list` | - | - | Required | - |
+| `labels apply` | Required | - | Required | - |
+| `labels remove` | Required | - | Required | - |
+| **Attachments** |
+| `attachments list` | Required | - | - | - |
+| `attachments download` | Required | - | - | - |
+| **gmailctl** |
+| `gmailctl download` | - | Required | Required | - |
+| `gmailctl apply` | - | Required | Required | - |
+| `gmailctl diff` | - | Required | Required | - |
+| **Task Lists** |
+| `tasklists list` | - | - | - | Required |
+| `tasklists create` | - | - | - | Required |
+| `tasklists delete` | - | - | - | Required |
+| **Tasks** |
+| `tasks list` | - | - | - | Required |
+| `tasks read` | - | - | - | Required |
+| `tasks create` | - | - | - | Required |
+| `tasks complete` | - | - | - | Required |
+| `tasks delete` | - | - | - | Required |
+| **Auth** |
+| `auth token-info` | - | - | - | - |
+| `configure` | - | - | - | - |
+
+**Note:** The `gmail.modify` scope provides broad message access. Google considers this a "restricted" scope requiring app verification for public distribution. For personal use or within your organization, verification is not required.
+
 ## Introduction
 
-gwcli provides command-line access to Gmail using the Gmail API. It supports:
+gwcli provides command-line access to Gmail and Google Tasks using their respective APIs. It supports:
 
-- Listing, reading, searching messages
-- Sending emails with attachments
-- Label management
-- Batch operations via stdin
-- JSON output for easy parsing
+- **Gmail**: Listing, reading, searching, and sending messages with attachments
+- **Gmail**: Label management and batch operations via stdin
+- **Tasks**: Managing task lists and tasks (create, read, complete, delete)
+- **gmailctl**: Native integration for filter/label management
+- **Output**: JSON output for easy parsing and automation
 
 ## Why gwcli?
-
-### Benefits over IMAP
-* **No passwords on disk** - OAuth2 is used instead. Access can be revoked at [Google Security Settings](https://security.google.com/settings/security/permissions)
-* **Native Gmail labels** - No awkward IMAP folder mapping
-* **gmailctl compatible** - Works seamlessly with gmailctl label definitions
-* **Better security** - Application-specific access, not full account credentials
-
-### Benefits over Gmail web UI
-* **Shell scripting** - Pipe, grep, awk, and process emails in scripts
-* **AI agent friendly** - Structured output (JSON) for programmatic access
-* **Fast** - No browser overhead
-* **Works remotely** - SSH-friendly, no graphics needed
-* **Composable** - Unix philosophy: do one thing well, pipe to other tools
-
-### Design for AI Agents and Automation
 
 gwcli is designed to be easily used by AI agents and shell scripts:
 
@@ -64,6 +112,12 @@ echo "msg1\nmsg2\nmsg3" | gwcli messages mark-read --stdin
 
 # Search and process
 gwcli messages search "from:example.com" --json | jq '.[] | .subject'
+
+# List task lists
+gwcli --json tasklists list | jq '.[].title'
+
+# Create a task
+gwcli tasks create <tasklist-id> --title "Review code" --due "2025-01-15T00:00:00Z"
 ```
 
 ## Installing
@@ -94,12 +148,13 @@ sudo cp dist/gwcli /usr/local/bin
 
 ## Setup Protocol
 
-1. **Build or install gwcli** – `just build` writes `dist/gwcli`, or `go install .` drops the binary in your `GOBIN`.
-2. **Install gmailctl** – `go install github.com/mbrt/gmailctl/cmd/gmailctl@latest` and confirm `gmailctl version` works; gwcli shells out to this binary.
-3. **Prepare the config directory** – `mkdir -p ~/.config/gwcli` and copy in `credentials.json`, `token.json` (OAuth only), and `config.jsonnet`. If you already have gmailctl state, symlink or copy it into this path.
-4. **Authorize** – For personal Gmail, run `just configure` (wrapper for `gwcli configure`) to generate `token.json`. For Workspace service accounts, skip this and plan to pass `--user you@example.com` on every gwcli invocation.
-5. **Sync gmailctl state** – `just gmailctl-download` pulls the current Gmail filters, edit `~/.config/gwcli/config.jsonnet`, and then run `just gmailctl-diff` / `just gmailctl-apply` to preview and push updates.
-6. **Use gwcli commands** – e.g., `gwcli messages list`, `gwcli --user admin@example.com labels list`, or `gwcli auth token-info` once authentication succeeds.
+1. **Build or install gwcli** – `just build` writes `dist/gwcli`, or `go install github.com/wesnick/gwcli@latest` drops the binary in your `GOBIN`.
+2. **Prepare the config directory** – `mkdir -p ~/.config/gwcli` and copy in `credentials.json`. If you already have gmailctl state, symlink or copy `config.jsonnet` into this path.
+3. **Authorize** – For personal Gmail, run `gwcli configure` to generate `token.json`. For Workspace service accounts, skip this and use `--user you@example.com` on every invocation.
+4. **Sync filter config** – `gwcli gmailctl download` pulls the current Gmail filters to `config.jsonnet`. Edit as needed, then run `gwcli gmailctl diff` / `gwcli gmailctl apply` to preview and push updates.
+5. **Use gwcli commands** – e.g., `gwcli messages list`, `gwcli tasklists list`, `gwcli --user admin@example.com labels list`.
+
+**Note:** gmailctl installation is optional. gwcli has native gmailctl integration for download/apply/diff commands. Install gmailctl separately only if you need its advanced commands like `edit`, `test`, or `debug`.
 
 ## Configuring
 
@@ -107,11 +162,12 @@ gwcli reads all authentication material and gmailctl rules from `~/.config/gwcli
 
 ### OAuth (Desktop flow)
 
-1. Visit the [Google Cloud Console](https://console.developers.google.com/), create (or reuse) a project, and enable the **Gmail API**.
-2. Configure the OAuth consent screen and add the scopes gwcli needs:
+1. Visit the [Google Cloud Console](https://console.developers.google.com/), create (or reuse) a project, and enable the **Gmail API** and **Google Tasks API**.
+2. Configure the OAuth consent screen and add the scopes gwcli needs (see [OAuth Scopes](#oauth-scopes) for details):
    - `https://www.googleapis.com/auth/gmail.modify`
    - `https://www.googleapis.com/auth/gmail.settings.basic`
    - `https://www.googleapis.com/auth/gmail.labels`
+   - `https://www.googleapis.com/auth/tasks`
 3. Create an **OAuth Client ID** of type *Desktop app* and download the JSON credentials to `~/.config/gwcli/credentials.json`.
 4. Run `gwcli configure` (or `just configure`) to finish the flow. The command prints a URL, prompts for the returned code, and writes `token.json` in the same directory.
 
@@ -119,13 +175,18 @@ Once both files exist you can run every command with your personal Gmail account
 
 ### Service Accounts (Google Workspace)
 
-gwcli can reuse gmailctl’s service-account authenticator to impersonate Workspace users:
+gwcli can reuse gmailctl's service-account authenticator to impersonate Workspace users:
 
-1. In the Cloud Console, create a Service Account, enable **Domain-wide Delegation**, and download the JSON key to `~/.config/gwcli/credentials.json`.
-2. In the Admin Console (`Security → API controls → Domain-wide delegation`) authorize the client ID from the JSON file with the scopes above.
+1. In the Cloud Console, enable **Gmail API** and **Google Tasks API**, create a Service Account, enable **Domain-wide Delegation**, and download the JSON key to `~/.config/gwcli/credentials.json`.
+2. In the Admin Console (`Security → API controls → Domain-wide delegation`) authorize the client ID from the JSON file with all four scopes:
+   - `https://www.googleapis.com/auth/gmail.modify`
+   - `https://www.googleapis.com/auth/gmail.settings.basic`
+   - `https://www.googleapis.com/auth/gmail.labels`
+   - `https://www.googleapis.com/auth/tasks`
 3. Skip `gwcli configure` (service accounts do not use OAuth tokens). Instead, pass `--user user@example.com` to every gwcli command to select the mailbox:
    ```bash
    gwcli --user ops@example.com messages list --label SRE
+   gwcli --user ops@example.com tasklists list
    ```
 4. Rotate the service-account key the same way you would for gmailctl; gwcli simply streams the file on every invocation.
 
@@ -218,9 +279,9 @@ gmailctl --config ~/.config/gwcli test
 gmailctl --config ~/.config/gwcli debug
 ```
 
-### Installing gmailctl
+### Installing gmailctl (Optional)
 
-The gmailctl wrapper commands require gmailctl to be installed:
+gwcli has native gmailctl integration for the most common operations (download, apply, diff). However, if you need advanced features like interactive editing or config testing, install the gmailctl binary:
 
 ```bash
 go install github.com/mbrt/gmailctl/cmd/gmailctl@latest
@@ -238,16 +299,16 @@ Typical workflow for managing labels and filters:
 
 ```bash
 # 1. Download your current Gmail filters
-just gmailctl-download
+gwcli gmailctl download
 
 # 2. Edit config.jsonnet in your favorite editor
 vim ~/.config/gwcli/config.jsonnet
 
 # 3. Preview changes before applying
-just gmailctl-diff
+gwcli gmailctl diff
 
 # 4. Apply the changes to Gmail
-just gmailctl-apply
+gwcli gmailctl apply
 
 # 5. Use the labels in gwcli
 gwcli messages list --label work
@@ -356,6 +417,47 @@ gwcli attachments download <message-id> --index 0 --output myfile.pdf
 
 **Note:** Attachments are automatically numbered (index: 0, 1, 2...) when viewing messages. Use the index for reliable selection. Filename conflicts are handled automatically with ` (n)` suffix.
 
+### Task Lists
+
+```bash
+# List all task lists
+gwcli tasklists list
+
+# Create a new task list
+gwcli tasklists create "Work Projects"
+
+# Delete a task list
+gwcli tasklists delete <tasklist-id> --force
+```
+
+### Tasks
+
+```bash
+# List tasks in a task list
+gwcli tasks list <tasklist-id>
+
+# Include completed tasks
+gwcli tasks list <tasklist-id> --include-completed
+
+# Create a new task
+gwcli tasks create <tasklist-id> --title "Review PR #42"
+
+# Create task with notes and due date
+gwcli tasks create <tasklist-id> \
+  --title "Submit report" \
+  --notes "Q4 financial summary" \
+  --due "2025-01-15T00:00:00Z"
+
+# View task details
+gwcli tasks read <tasklist-id> <task-id>
+
+# Mark task as completed
+gwcli tasks complete <tasklist-id> <task-id>
+
+# Delete a task
+gwcli tasks delete <tasklist-id> <task-id> --force
+```
+
 ### Batch Operations
 
 ```bash
@@ -400,16 +502,40 @@ gwcli messages read -H <msg-id> | html2md
 gwcli messages read -H <msg-id> | pandoc -f html -t markdown
 ```
 
-## Differences from Original cmdg
+## Comparison with Source Projects
 
-| Feature | cmdg (original) | gwcli (this fork) |
-|---------|----------------|---------------------|
-| Interactive TUI | ✅ Yes (Pine/Alpine-like) | ❌ Removed |
-| Command-line interface | ❌ No | ✅ Yes |
-| HTML rendering | Uses lynx | Raw HTML output |
+gwcli combines and extends functionality from three projects:
+
+### vs cmdg
+
+| Feature | cmdg | gwcli |
+|---------|------|-------|
+| Interactive TUI | Yes (Pine/Alpine-like) | Removed |
+| Command-line interface | No | Yes |
+| HTML rendering | Uses lynx | Raw HTML/Markdown output |
 | Scripting friendly | Limited | Designed for it |
-| JSON output | N/A | Yes |
-| Batch operations | N/A | Yes (via stdin) |
+| JSON output | No | Yes |
+| Batch operations | No | Yes (via stdin) |
+
+### vs gmailctl
+
+| Feature | gmailctl | gwcli |
+|---------|----------|-------|
+| Filter management | Primary focus | Integrated (download/apply/diff) |
+| Message operations | No | Yes (list, read, search, send) |
+| Label operations | Create/delete via config | Apply/remove + config sync |
+| Config format | Jsonnet | Same (compatible) |
+| Authentication | OAuth + Service Account | Same (shared code) |
+
+### vs gtasks
+
+| Feature | gtasks | gwcli |
+|---------|--------|-------|
+| Task lists | Yes | Yes |
+| Tasks CRUD | Yes | Yes |
+| Gmail integration | No | Yes |
+| Unified credentials | N/A | Yes (single config dir) |
+| Service account support | No | Yes |
 
 ## Contributing
 
@@ -419,12 +545,7 @@ This fork focuses on CLI automation and simplicity. PRs welcome for:
 - Better JSON output structures
 - Shell completion scripts
 
-Not accepting:
-- Re-adding TUI functionality (use original cmdg for that)
-- Interactive prompts (breaks scripting)
 
 ## Support
 
 For issues specific to gwcli (CLI functionality), open an issue on this repository.
-
-For general Gmail API questions or issues inherited from original cmdg, see the [original cmdg repository](https://github.com/ThomasHabets/cmdg).
