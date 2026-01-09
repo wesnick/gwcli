@@ -19,10 +19,10 @@ type tokenInfoOutput struct {
 	IssuedTo      string   `json:"issued_to"`
 	AppName       string   `json:"app_name"`
 	// Additional user profile information
-	ProfileEmail         string `json:"profile_email"`
-	MessagesTotal        int    `json:"messages_total"`
-	ThreadsTotal         int    `json:"threads_total"`
-	HistoryID            string `json:"history_id"`
+	ProfileEmail  string `json:"profile_email"`
+	MessagesTotal int    `json:"messages_total"`
+	ThreadsTotal  int    `json:"threads_total"`
+	HistoryID     string `json:"history_id"`
 }
 
 // runAuthTokenInfo retrieves and displays information about the current OAuth token
