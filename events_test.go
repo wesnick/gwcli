@@ -1594,3 +1594,248 @@ END:VCALENDAR`
 		t.Errorf("expected 0 imported events, got %d", result.Imported)
 	}
 }
+
+func TestRunEventsUpdate(t *testing.T) {
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "PATCH" && strings.Contains(req.URL.Path, "/calendar/v3/calendars/primary/events/event1") {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"id": "event1",
+						"summary": "Updated Meeting",
+						"start": {"dateTime": "2024-01-15T10:00:00-08:00"},
+						"end": {"dateTime": "2024-01-15T11:00:00-08:00"},
+						"status": "confirmed"
+					}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	opts := updateEventOptions{
+		summary: "Updated Meeting",
+	}
+	err = runEventsUpdate(context.Background(), conn, "primary", "event1", opts, out)
+	if err != nil {
+		t.Fatalf("runEventsUpdate() error = %v", err)
+	}
+
+	var result eventOutput
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+
+	if result.Summary != "Updated Meeting" {
+		t.Errorf("expected summary 'Updated Meeting', got %q", result.Summary)
+	}
+}
+
+func TestRunEventsDelete(t *testing.T) {
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "DELETE" && strings.Contains(req.URL.Path, "/calendar/v3/calendars/primary/events/event1") {
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(``)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	err = runEventsDelete(context.Background(), conn, "primary", "event1", false, out)
+	if err != nil {
+		t.Fatalf("runEventsDelete() error = %v", err)
+	}
+}
+
+func TestRunEventsSearch(t *testing.T) {
+	eventsJSON := `{
+		"kind": "calendar#events",
+		"items": [
+			{
+				"id": "event1",
+				"summary": "Project Review Meeting",
+				"start": {"dateTime": "2024-01-15T10:00:00-08:00"},
+				"end": {"dateTime": "2024-01-15T11:00:00-08:00"}
+			}
+		]
+	}`
+
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Path, "/calendar/v3/calendars/primary/events") &&
+				strings.Contains(req.URL.RawQuery, "q=review") {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(eventsJSON)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	err = runEventsSearch(context.Background(), conn, []string{"primary"}, "review", "", "", 25, out)
+	if err != nil {
+		t.Fatalf("runEventsSearch() error = %v", err)
+	}
+
+	var result []eventOutput
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+
+	if len(result) != 1 {
+		t.Errorf("expected 1 event, got %d", len(result))
+	}
+}
+
+func TestRunEventsUpdated(t *testing.T) {
+	eventsJSON := `{
+		"kind": "calendar#events",
+		"items": [
+			{
+				"id": "event1",
+				"summary": "Recently Updated Meeting",
+				"start": {"dateTime": "2024-01-15T10:00:00-08:00"},
+				"end": {"dateTime": "2024-01-15T11:00:00-08:00"},
+				"updated": "2024-01-14T08:00:00Z"
+			}
+		]
+	}`
+
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Path, "/calendar/v3/calendars/primary/events") &&
+				strings.Contains(req.URL.RawQuery, "updatedMin=") {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(eventsJSON)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	err = runEventsUpdated(context.Background(), conn, "primary", "2024-01-13T00:00:00Z", "", "", 25, out)
+	if err != nil {
+		t.Fatalf("runEventsUpdated() error = %v", err)
+	}
+
+	var result []eventOutput
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+
+	if len(result) != 1 {
+		t.Errorf("expected 1 event, got %d", len(result))
+	}
+}
+
+func TestRunEventsConflicts(t *testing.T) {
+	eventsJSON := `{
+		"kind": "calendar#events",
+		"items": [
+			{
+				"id": "event1",
+				"summary": "Meeting A",
+				"start": {"dateTime": "2024-01-15T10:00:00-08:00"},
+				"end": {"dateTime": "2024-01-15T11:00:00-08:00"}
+			},
+			{
+				"id": "event2",
+				"summary": "Meeting B",
+				"start": {"dateTime": "2024-01-15T10:30:00-08:00"},
+				"end": {"dateTime": "2024-01-15T11:30:00-08:00"}
+			}
+		]
+	}`
+
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Path, "/calendar/v3/calendars/primary/events") {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(eventsJSON)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	err = runEventsConflicts(context.Background(), conn, "primary", "", "", out)
+	if err != nil {
+		t.Fatalf("runEventsConflicts() error = %v", err)
+	}
+
+	var result []conflictOutput
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+
+	if len(result) != 1 {
+		t.Errorf("expected 1 conflict, got %d", len(result))
+	}
+}

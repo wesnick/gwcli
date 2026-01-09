@@ -646,3 +646,367 @@ func runEventsImport(ctx context.Context, conn *gwcli.CmdG, calendarID string, r
 		result.Imported, result.Skipped, result.Failed))
 	return nil
 }
+
+// updateEventOptions holds options for updating an event.
+type updateEventOptions struct {
+	summary     string
+	description string
+	location    string
+	start       string
+	end         string
+	colorID     string
+}
+
+// runEventsUpdate updates an existing event via PATCH.
+func runEventsUpdate(ctx context.Context, conn *gwcli.CmdG, calendarID, eventID string, opts updateEventOptions, out *outputWriter) error {
+	if calendarID == "" {
+		calendarID = "primary"
+	}
+	if eventID == "" {
+		return fmt.Errorf("event ID is required")
+	}
+
+	out.writeVerbose("Updating event %s in calendar %s...", eventID, calendarID)
+
+	svc := conn.CalendarService()
+	if svc == nil {
+		return fmt.Errorf("calendar service not initialized")
+	}
+
+	// Build patch object with only specified fields
+	event := &calendar.Event{}
+	hasChanges := false
+
+	if opts.summary != "" {
+		event.Summary = opts.summary
+		hasChanges = true
+	}
+	if opts.description != "" {
+		event.Description = opts.description
+		hasChanges = true
+	}
+	if opts.location != "" {
+		event.Location = opts.location
+		hasChanges = true
+	}
+	if opts.start != "" {
+		event.Start = &calendar.EventDateTime{DateTime: opts.start}
+		hasChanges = true
+	}
+	if opts.end != "" {
+		event.End = &calendar.EventDateTime{DateTime: opts.end}
+		hasChanges = true
+	}
+	if opts.colorID != "" {
+		event.ColorId = opts.colorID
+		hasChanges = true
+	}
+
+	if !hasChanges {
+		return fmt.Errorf("no changes specified")
+	}
+
+	updated, err := svc.Events.Patch(calendarID, eventID, event).Context(ctx).Do()
+	if err != nil {
+		return fmt.Errorf("failed to update event: %w", err)
+	}
+
+	if out.json {
+		return out.writeJSON(eventOutputFromEvent(updated, calendarID))
+	}
+
+	out.writeMessage(fmt.Sprintf("Updated event %q (ID: %s)", updated.Summary, updated.Id))
+	return nil
+}
+
+// runEventsDelete deletes an event.
+func runEventsDelete(ctx context.Context, conn *gwcli.CmdG, calendarID, eventID string, force bool, out *outputWriter) error {
+	if calendarID == "" {
+		calendarID = "primary"
+	}
+	if eventID == "" {
+		return fmt.Errorf("event ID is required")
+	}
+
+	out.writeVerbose("Deleting event %s from calendar %s...", eventID, calendarID)
+
+	svc := conn.CalendarService()
+	if svc == nil {
+		return fmt.Errorf("calendar service not initialized")
+	}
+
+	if err := svc.Events.Delete(calendarID, eventID).Context(ctx).Do(); err != nil {
+		return fmt.Errorf("failed to delete event: %w", err)
+	}
+
+	if out.json {
+		return out.writeJSON(map[string]string{"deleted": eventID})
+	}
+
+	out.writeMessage(fmt.Sprintf("Deleted event %s", eventID))
+	return nil
+}
+
+// runEventsSearch searches for events across calendars.
+func runEventsSearch(ctx context.Context, conn *gwcli.CmdG, calendarIDs []string, query, timeMin, timeMax string, maxResults int, out *outputWriter) error {
+	if query == "" {
+		return fmt.Errorf("search query is required")
+	}
+	if len(calendarIDs) == 0 {
+		calendarIDs = []string{"primary"}
+	}
+
+	out.writeVerbose("Searching for %q across %d calendars...", query, len(calendarIDs))
+
+	svc := conn.CalendarService()
+	if svc == nil {
+		return fmt.Errorf("calendar service not initialized")
+	}
+
+	var allEvents []eventOutput
+
+	for _, calID := range calendarIDs {
+		call := svc.Events.List(calID).Context(ctx).
+			Q(query).
+			SingleEvents(true).
+			OrderBy("startTime")
+
+		if maxResults > 0 {
+			call = call.MaxResults(int64(maxResults))
+		}
+		if timeMin != "" {
+			call = call.TimeMin(timeMin)
+		}
+		if timeMax != "" {
+			call = call.TimeMax(timeMax)
+		}
+
+		resp, err := call.Do()
+		if err != nil {
+			out.writeVerbose("Warning: failed to search calendar %s: %v", calID, err)
+			continue
+		}
+
+		for _, ev := range resp.Items {
+			allEvents = append(allEvents, eventOutputFromEvent(ev, calID))
+		}
+	}
+
+	if out.json {
+		return out.writeJSON(allEvents)
+	}
+
+	if len(allEvents) == 0 {
+		out.writeMessage("No matching events found.")
+		return nil
+	}
+
+	headers := []string{"DATE", "TIME", "SUMMARY", "CALENDAR", "ID"}
+	rows := make([][]string, len(allEvents))
+	for i, ev := range allEvents {
+		date := ""
+		timeStr := ""
+		if ev.Start != "" {
+			t, err := time.Parse(time.RFC3339, ev.Start)
+			if err == nil {
+				date = t.Format("2006-01-02")
+				timeStr = t.Format("15:04")
+			}
+		} else if ev.StartDate != "" {
+			date = ev.StartDate
+			timeStr = "all-day"
+		}
+		rows[i] = []string{
+			date,
+			timeStr,
+			truncateString(ev.Summary, 35),
+			truncateString(ev.CalendarID, 20),
+			ev.ID,
+		}
+	}
+	return out.writeTable(headers, rows)
+}
+
+// runEventsUpdated finds events modified since a specific time.
+func runEventsUpdated(ctx context.Context, conn *gwcli.CmdG, calendarID, updatedMin, timeMin, timeMax string, maxResults int, out *outputWriter) error {
+	if calendarID == "" {
+		calendarID = "primary"
+	}
+	if updatedMin == "" {
+		return fmt.Errorf("updated-min timestamp is required")
+	}
+
+	out.writeVerbose("Fetching events updated since %s from calendar %s...", updatedMin, calendarID)
+
+	svc := conn.CalendarService()
+	if svc == nil {
+		return fmt.Errorf("calendar service not initialized")
+	}
+
+	call := svc.Events.List(calendarID).Context(ctx).
+		UpdatedMin(updatedMin).
+		SingleEvents(true).
+		OrderBy("updated")
+
+	if maxResults > 0 {
+		call = call.MaxResults(int64(maxResults))
+	}
+	if timeMin != "" {
+		call = call.TimeMin(timeMin)
+	}
+	if timeMax != "" {
+		call = call.TimeMax(timeMax)
+	}
+
+	resp, err := call.Do()
+	if err != nil {
+		return fmt.Errorf("failed to list updated events: %w", err)
+	}
+
+	if out.json {
+		output := make([]eventOutput, len(resp.Items))
+		for i, ev := range resp.Items {
+			output[i] = eventOutputFromEvent(ev, calendarID)
+		}
+		return out.writeJSON(output)
+	}
+
+	if len(resp.Items) == 0 {
+		out.writeMessage(fmt.Sprintf("No events updated since %s", updatedMin))
+		return nil
+	}
+
+	headers := []string{"UPDATED", "SUMMARY", "STATUS", "ID"}
+	rows := make([][]string, len(resp.Items))
+	for i, ev := range resp.Items {
+		updated := ""
+		if ev.Updated != "" {
+			t, err := time.Parse(time.RFC3339, ev.Updated)
+			if err == nil {
+				updated = t.Format("2006-01-02 15:04")
+			} else {
+				updated = ev.Updated[:16]
+			}
+		}
+		rows[i] = []string{
+			updated,
+			truncateString(ev.Summary, 40),
+			ev.Status,
+			ev.Id,
+		}
+	}
+	return out.writeTable(headers, rows)
+}
+
+// conflictOutput represents a scheduling conflict.
+type conflictOutput struct {
+	Event1 eventOutput `json:"event1"`
+	Event2 eventOutput `json:"event2"`
+}
+
+// runEventsConflicts detects scheduling conflicts (overlapping events).
+func runEventsConflicts(ctx context.Context, conn *gwcli.CmdG, calendarID, timeMin, timeMax string, out *outputWriter) error {
+	if calendarID == "" {
+		calendarID = "primary"
+	}
+
+	out.writeVerbose("Checking for conflicts in calendar %s...", calendarID)
+
+	svc := conn.CalendarService()
+	if svc == nil {
+		return fmt.Errorf("calendar service not initialized")
+	}
+
+	call := svc.Events.List(calendarID).Context(ctx).
+		SingleEvents(true).
+		OrderBy("startTime")
+
+	// Default to 30 days if no range specified
+	if timeMin == "" {
+		timeMin = time.Now().Format(time.RFC3339)
+	}
+	call = call.TimeMin(timeMin)
+
+	if timeMax == "" {
+		timeMax = time.Now().AddDate(0, 0, 30).Format(time.RFC3339)
+	}
+	call = call.TimeMax(timeMax)
+
+	resp, err := call.Do()
+	if err != nil {
+		return fmt.Errorf("failed to list events: %w", err)
+	}
+
+	// Find overlapping events
+	conflicts := findConflicts(resp.Items, calendarID)
+
+	if out.json {
+		return out.writeJSON(conflicts)
+	}
+
+	if len(conflicts) == 0 {
+		out.writeMessage("No scheduling conflicts found.")
+		return nil
+	}
+
+	out.writeMessage(fmt.Sprintf("Found %d conflicts:\n", len(conflicts)))
+	for i, c := range conflicts {
+		out.writeMessage(fmt.Sprintf("Conflict %d:", i+1))
+		out.writeMessage(fmt.Sprintf("  Event 1: %s (%s)", c.Event1.Summary, c.Event1.Start))
+		out.writeMessage(fmt.Sprintf("  Event 2: %s (%s)", c.Event2.Summary, c.Event2.Start))
+		out.writeMessage("")
+	}
+	return nil
+}
+
+// findConflicts detects overlapping events.
+func findConflicts(events []*calendar.Event, calendarID string) []conflictOutput {
+	var conflicts []conflictOutput
+
+	for i := 0; i < len(events); i++ {
+		ev1 := events[i]
+		start1, end1 := parseEventTimes(ev1)
+		if start1.IsZero() || end1.IsZero() {
+			continue
+		}
+
+		for j := i + 1; j < len(events); j++ {
+			ev2 := events[j]
+			start2, end2 := parseEventTimes(ev2)
+			if start2.IsZero() || end2.IsZero() {
+				continue
+			}
+
+			// Events are sorted by start time, so if ev2 starts after ev1 ends, no more conflicts for ev1
+			if start2.After(end1) || start2.Equal(end1) {
+				break
+			}
+
+			// Check overlap: ev1 overlaps ev2 if start1 < end2 && start2 < end1
+			if start1.Before(end2) && start2.Before(end1) {
+				conflicts = append(conflicts, conflictOutput{
+					Event1: eventOutputFromEvent(ev1, calendarID),
+					Event2: eventOutputFromEvent(ev2, calendarID),
+				})
+			}
+		}
+	}
+
+	return conflicts
+}
+
+// parseEventTimes extracts start and end times from an event.
+func parseEventTimes(ev *calendar.Event) (start, end time.Time) {
+	if ev.Start == nil || ev.End == nil {
+		return
+	}
+
+	if ev.Start.DateTime != "" {
+		start, _ = time.Parse(time.RFC3339, ev.Start.DateTime)
+	}
+	if ev.End.DateTime != "" {
+		end, _ = time.Parse(time.RFC3339, ev.End.DateTime)
+	}
+
+	return start, end
+}
