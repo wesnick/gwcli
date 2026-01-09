@@ -1,6 +1,6 @@
-# gwcli - Command-line Gmail & Google Tasks Client
+# gwcli - Command-line Gmail, Tasks & Calendar Client
 
-A command-line interface for Gmail and Google Tasks, optimized for non-interactive use, shell scripting, and AI agent integration.
+A command-line interface for Gmail, Google Tasks, and Google Calendar, optimized for non-interactive use, shell scripting, and AI agent integration.
 
 ## About This Project
 
@@ -15,7 +15,7 @@ gwcli combines functionality from three open-source projects:
 **Key characteristics:**
 - **Pure CLI tool** - Designed for shell scripting and piping to other tools (no TUI)
 - **Non-interactive** - All commands work without user interaction
-- **Unified authentication** - Single credential set for Gmail and Tasks APIs
+- **Unified authentication** - Single credential set for Gmail, Tasks, and Calendar APIs
 - **gmailctl compatible** - Uses same Jsonnet config format for labels and filters
 
 ## License
@@ -30,7 +30,7 @@ Additional components:
 
 ## OAuth Scopes
 
-gwcli requires the following OAuth 2.0 scopes. When setting up OAuth credentials in Google Cloud Console or authorizing domain-wide delegation for service accounts, you must enable all four scopes.
+gwcli requires the following OAuth 2.0 scopes. When setting up OAuth credentials in Google Cloud Console or authorizing domain-wide delegation for service accounts, you must enable all five scopes.
 
 ### Required Scopes
 
@@ -40,56 +40,71 @@ gwcli requires the following OAuth 2.0 scopes. When setting up OAuth credentials
 | `https://www.googleapis.com/auth/gmail.settings.basic` | Manage basic mail settings | Restricted |
 | `https://www.googleapis.com/auth/gmail.labels` | Create, read, update, and delete labels | Non-sensitive |
 | `https://www.googleapis.com/auth/tasks` | Create, edit, organize, and delete tasks | Sensitive |
+| `https://www.googleapis.com/auth/calendar` | Read/write access to calendars and events | Sensitive |
 
 ### Command-to-Scope Matrix
 
 This table shows which scopes are required for each command group:
 
-| Command | `gmail.modify` | `gmail.settings.basic` | `gmail.labels` | `tasks` |
-|---------|:--------------:|:----------------------:|:--------------:|:-------:|
+| Command | `gmail.modify` | `gmail.settings.basic` | `gmail.labels` | `tasks` | `calendar` |
+|---------|:--------------:|:----------------------:|:--------------:|:-------:|:----------:|
 | **Messages** |
-| `messages list` | Required | - | - | - |
-| `messages read` | Required | - | - | - |
-| `messages search` | Required | - | - | - |
-| `messages send` | Required | - | - | - |
-| `messages delete` | Required | - | - | - |
-| `messages mark-read` | Required | - | - | - |
-| `messages mark-unread` | Required | - | - | - |
-| `messages move` | Required | - | - | - |
+| `messages list` | Required | - | - | - | - |
+| `messages read` | Required | - | - | - | - |
+| `messages search` | Required | - | - | - | - |
+| `messages send` | Required | - | - | - | - |
+| `messages delete` | Required | - | - | - | - |
+| `messages mark-read` | Required | - | - | - | - |
+| `messages mark-unread` | Required | - | - | - | - |
+| `messages move` | Required | - | - | - | - |
 | **Labels** |
-| `labels list` | - | - | Required | - |
-| `labels apply` | Required | - | Required | - |
-| `labels remove` | Required | - | Required | - |
+| `labels list` | - | - | Required | - | - |
+| `labels apply` | Required | - | Required | - | - |
+| `labels remove` | Required | - | Required | - | - |
 | **Attachments** |
-| `attachments list` | Required | - | - | - |
-| `attachments download` | Required | - | - | - |
+| `attachments list` | Required | - | - | - | - |
+| `attachments download` | Required | - | - | - | - |
 | **gmailctl** |
-| `gmailctl download` | - | Required | Required | - |
-| `gmailctl apply` | - | Required | Required | - |
-| `gmailctl diff` | - | Required | Required | - |
+| `gmailctl download` | - | Required | Required | - | - |
+| `gmailctl apply` | - | Required | Required | - | - |
+| `gmailctl diff` | - | Required | Required | - | - |
 | **Task Lists** |
-| `tasklists list` | - | - | - | Required |
-| `tasklists create` | - | - | - | Required |
-| `tasklists delete` | - | - | - | Required |
+| `tasklists list` | - | - | - | Required | - |
+| `tasklists create` | - | - | - | Required | - |
+| `tasklists delete` | - | - | - | Required | - |
 | **Tasks** |
-| `tasks list` | - | - | - | Required |
-| `tasks read` | - | - | - | Required |
-| `tasks create` | - | - | - | Required |
-| `tasks complete` | - | - | - | Required |
-| `tasks delete` | - | - | - | Required |
+| `tasks list` | - | - | - | Required | - |
+| `tasks read` | - | - | - | Required | - |
+| `tasks create` | - | - | - | Required | - |
+| `tasks complete` | - | - | - | Required | - |
+| `tasks delete` | - | - | - | Required | - |
+| **Calendars** |
+| `calendars list` | - | - | - | - | Required |
+| **Events** |
+| `events list` | - | - | - | - | Required |
+| `events read` | - | - | - | - | Required |
+| `events create` | - | - | - | - | Required |
+| `events quickadd` | - | - | - | - | Required |
+| `events update` | - | - | - | - | Required |
+| `events delete` | - | - | - | - | Required |
+| `events search` | - | - | - | - | Required |
+| `events updated` | - | - | - | - | Required |
+| `events conflicts` | - | - | - | - | Required |
+| `events import` | - | - | - | - | Required |
 | **Auth** |
-| `auth token-info` | - | - | - | - |
-| `configure` | - | - | - | - |
+| `auth token-info` | - | - | - | - | - |
+| `configure` | - | - | - | - | - |
 
 **Note:** The `gmail.modify` scope provides broad message access. Google considers this a "restricted" scope requiring app verification for public distribution. For personal use or within your organization, verification is not required.
 
 ## Introduction
 
-gwcli provides command-line access to Gmail and Google Tasks using their respective APIs. It supports:
+gwcli provides command-line access to Gmail, Google Tasks, and Google Calendar using their respective APIs. It supports:
 
 - **Gmail**: Listing, reading, searching, and sending messages with attachments
 - **Gmail**: Label management and batch operations via stdin
 - **Tasks**: Managing task lists and tasks (create, read, complete, delete)
+- **Calendar**: Managing calendars and events (list, create, update, delete, search, conflicts, import)
 - **gmailctl**: Native integration for filter/label management
 - **Output**: JSON output for easy parsing and automation
 
@@ -118,6 +133,15 @@ gwcli --json tasklists list | jq '.[].title'
 
 # Create a task
 gwcli tasks create <tasklist-id> --title "Review code" --due "2025-01-15T00:00:00Z"
+
+# List upcoming calendar events
+gwcli events list --json | jq '.[].summary'
+
+# Quick add event with natural language
+gwcli events quickadd "Team meeting tomorrow at 3pm"
+
+# Check for scheduling conflicts
+gwcli events conflicts
 ```
 
 ## Installing
@@ -162,12 +186,13 @@ gwcli reads all authentication material and gmailctl rules from `~/.config/gwcli
 
 ### OAuth (Desktop flow)
 
-1. Visit the [Google Cloud Console](https://console.developers.google.com/), create (or reuse) a project, and enable the **Gmail API** and **Google Tasks API**.
+1. Visit the [Google Cloud Console](https://console.developers.google.com/), create (or reuse) a project, and enable the **Gmail API**, **Google Tasks API**, and **Google Calendar API**.
 2. Configure the OAuth consent screen and add the scopes gwcli needs (see [OAuth Scopes](#oauth-scopes) for details):
    - `https://www.googleapis.com/auth/gmail.modify`
    - `https://www.googleapis.com/auth/gmail.settings.basic`
    - `https://www.googleapis.com/auth/gmail.labels`
    - `https://www.googleapis.com/auth/tasks`
+   - `https://www.googleapis.com/auth/calendar`
 3. Create an **OAuth Client ID** of type *Desktop app* and download the JSON credentials to `~/.config/gwcli/credentials.json`.
 4. Run `gwcli configure` (or `just configure`) to finish the flow. The command prints a URL, prompts for the returned code, and writes `token.json` in the same directory.
 
@@ -177,16 +202,18 @@ Once both files exist you can run every command with your personal Gmail account
 
 gwcli can reuse gmailctl's service-account authenticator to impersonate Workspace users:
 
-1. In the Cloud Console, enable **Gmail API** and **Google Tasks API**, create a Service Account, enable **Domain-wide Delegation**, and download the JSON key to `~/.config/gwcli/credentials.json`.
-2. In the Admin Console (`Security → API controls → Domain-wide delegation`) authorize the client ID from the JSON file with all four scopes:
+1. In the Cloud Console, enable **Gmail API**, **Google Tasks API**, and **Google Calendar API**, create a Service Account, enable **Domain-wide Delegation**, and download the JSON key to `~/.config/gwcli/credentials.json`.
+2. In the Admin Console (`Security → API controls → Domain-wide delegation`) authorize the client ID from the JSON file with all five scopes:
    - `https://www.googleapis.com/auth/gmail.modify`
    - `https://www.googleapis.com/auth/gmail.settings.basic`
    - `https://www.googleapis.com/auth/gmail.labels`
    - `https://www.googleapis.com/auth/tasks`
+   - `https://www.googleapis.com/auth/calendar`
 3. Skip `gwcli configure` (service accounts do not use OAuth tokens). Instead, pass `--user user@example.com` to every gwcli command to select the mailbox:
    ```bash
    gwcli --user ops@example.com messages list --label SRE
    gwcli --user ops@example.com tasklists list
+   gwcli --user ops@example.com events list
    ```
 4. Rotate the service-account key the same way you would for gmailctl; gwcli simply streams the file on every invocation.
 
@@ -458,6 +485,89 @@ gwcli tasks complete <tasklist-id> <task-id>
 gwcli tasks delete <tasklist-id> <task-id> --force
 ```
 
+### Calendars
+
+```bash
+# List all accessible calendars
+gwcli calendars list
+
+# List calendars with JSON output
+gwcli --json calendars list
+
+# Filter by minimum access role
+gwcli calendars list --min-access-role owner
+```
+
+### Events
+
+```bash
+# List upcoming events (default: primary calendar)
+gwcli events list
+
+# List events from a specific calendar
+gwcli events list work@group.calendar.google.com
+
+# List events in a date range
+gwcli events list --time-min "2025-01-01T00:00:00Z" --time-max "2025-01-31T23:59:59Z"
+
+# Search events by text
+gwcli events list --query "meeting"
+
+# Get event details
+gwcli events read <event-id>
+gwcli events read <calendar-id> <event-id>
+
+# Create event with full details
+gwcli events create --summary "Team Meeting" \
+  --start "2025-01-15T10:00:00Z" \
+  --end "2025-01-15T11:00:00Z" \
+  --location "Conference Room A"
+
+# Create all-day event
+gwcli events create --summary "Company Holiday" --start "2025-01-20" --all-day
+
+# Create event with attendees and reminders
+gwcli events create --summary "Planning Session" \
+  --start "2025-01-15T14:00:00Z" \
+  --attendee alice@example.com \
+  --attendee bob@example.com \
+  --reminder "15m popup" \
+  --reminder "1h email"
+
+# Quick add with natural language
+gwcli events quickadd "Lunch with Bob tomorrow at noon"
+gwcli events quickadd "Team standup every Monday at 9am"
+
+# Update an event
+gwcli events update <event-id> --summary "Updated Title"
+gwcli events update <event-id> --location "Room B"
+
+# Delete an event
+gwcli events delete <event-id>
+gwcli events delete <event-id> --force
+
+# Search across multiple calendars
+gwcli events search "review" --calendar primary --calendar work@group.calendar.google.com
+
+# Find recently updated events
+gwcli events updated --updated-min "2025-01-01T00:00:00Z"
+
+# Detect scheduling conflicts
+gwcli events conflicts
+gwcli events conflicts --time-max "2025-02-01T00:00:00Z"
+
+# Import events from ICS file
+gwcli events import --file meeting.ics
+gwcli events import --file meeting.ics --dry-run
+cat events.ics | gwcli events import --file -
+```
+
+**Reminder format:** `<number>[w|d|h|m] [popup|email]`
+- `15` or `15m` - 15 minutes before, popup notification
+- `1h` - 1 hour before, popup
+- `2d popup` - 2 days before, popup
+- `1w email` - 1 week before, email
+
 ### Batch Operations
 
 ```bash
@@ -536,6 +646,23 @@ gwcli combines and extends functionality from three projects:
 | Gmail integration | No | Yes |
 | Unified credentials | N/A | Yes (single config dir) |
 | Service account support | No | Yes |
+
+### Calendar Features
+
+gwcli provides comprehensive Google Calendar support:
+
+| Feature | Description |
+|---------|-------------|
+| Calendar listing | List all accessible calendars with access roles |
+| Event CRUD | Create, read, update, delete events |
+| Quick add | Natural language event creation ("Lunch tomorrow at noon") |
+| Search | Full-text search across calendars |
+| Conflict detection | Find overlapping events in a time range |
+| ICS import | Import events from iCalendar files |
+| Reminders | Configurable popup/email reminders |
+| Attendees | Add attendees when creating events |
+| All-day events | Create and manage all-day events |
+| Service accounts | Full Workspace delegation support |
 
 ## Contributing
 
