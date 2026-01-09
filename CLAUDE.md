@@ -220,6 +220,7 @@ Required OAuth scopes:
 - `https://www.googleapis.com/auth/gmail.settings.basic`
 - `https://www.googleapis.com/auth/gmail.labels`
 - `https://www.googleapis.com/auth/tasks`
+- `https://www.googleapis.com/auth/calendar`
 
 #### Service Account (Google Workspace Domain-Wide Delegation)
 
@@ -237,6 +238,7 @@ For Google Workspace accounts, you can use a service account to impersonate user
    - `https://www.googleapis.com/auth/gmail.settings.basic`
    - `https://www.googleapis.com/auth/gmail.labels`
    - `https://www.googleapis.com/auth/tasks`
+   - `https://www.googleapis.com/auth/calendar`
 9. Use the `--user` flag to specify which user to impersonate:
    ```bash
    gwcli --user user@example.com messages list
@@ -379,15 +381,110 @@ gwcli --user user@example.com tasks create <tasklist-id> --title "New Task"
 
 Note: Service accounts require domain-wide delegation with the `https://www.googleapis.com/auth/tasks` scope authorized in Google Workspace Admin Console.
 
+## Google Calendar Commands
+
+gwcli supports Google Calendar API for managing calendars and events.
+
+### Calendars
+
+```bash
+# List all accessible calendars
+gwcli calendars list
+gwcli calendars list --json
+gwcli calendars list --min-access-role owner
+```
+
+### Events
+
+```bash
+# List upcoming events (default: primary calendar)
+gwcli events list
+gwcli events list work@group.calendar.google.com
+
+# List events in date range
+gwcli events list --time-min "2024-01-01T00:00:00Z" --time-max "2024-01-31T23:59:59Z"
+
+# Search events
+gwcli events list --query "meeting"
+
+# Get event details
+gwcli events read <event-id>
+gwcli events read <calendar-id> <event-id>
+gwcli events read <event-id> --json
+
+# Create event with full details
+gwcli events create --summary "Team Meeting" --start "2024-01-15T10:00:00Z" --end "2024-01-15T11:00:00Z"
+gwcli events create --summary "All Day Event" --start "2024-01-15" --all-day
+gwcli events create --summary "Meeting" --start "2024-01-15T10:00:00Z" --attendee alice@example.com --attendee bob@example.com
+
+# Quick add (natural language)
+gwcli events quickadd "Lunch with Bob tomorrow at noon"
+gwcli events quickadd <calendar-id> "Team standup every Monday at 9am"
+
+# Update event
+gwcli events update <event-id> --summary "New Title"
+gwcli events update <calendar-id> <event-id> --location "Conference Room B"
+
+# Delete event
+gwcli events delete <event-id>
+gwcli events delete <event-id> --force
+
+# Search across calendars
+gwcli events search "review"
+gwcli events search "review" --calendar primary --calendar work@group.calendar.google.com
+
+# Find recently updated events
+gwcli events updated --updated-min "2024-01-01T00:00:00Z"
+
+# Detect scheduling conflicts
+gwcli events conflicts
+gwcli events conflicts --time-max "2024-02-01T00:00:00Z"
+
+# Import ICS file
+gwcli events import --file meeting.ics
+gwcli events import --file meeting.ics --dry-run
+cat events.ics | gwcli events import --file -
+```
+
+### Reminders
+
+Reminder format: `<number>[w|d|h|m] [popup|email]`
+
+Examples:
+- `15` or `15m` - 15 minutes before, popup notification
+- `1h` - 1 hour before, popup
+- `2d popup` - 2 days before, popup
+- `1w email` - 1 week before, email
+
+```bash
+gwcli events create --summary "Meeting" --start "2024-01-15T10:00:00Z" \
+    --reminder "15m popup" --reminder "1h email"
+```
+
+### Service Account Usage
+
+For Google Workspace accounts using service accounts:
+
+```bash
+# List calendars for a specific user
+gwcli --user user@example.com calendars list
+
+# Create event for a user
+gwcli --user user@example.com events create --summary "Meeting" --start "2024-01-15T10:00:00Z"
+```
+
+Note: Service accounts require domain-wide delegation with the `https://www.googleapis.com/auth/calendar` scope authorized in Google Workspace Admin Console.
+
 ## Dependencies
 
 - **Kong** (`github.com/alecthomas/kong`) - CLI parsing (not Cobra)
-- **Google APIs** - Gmail API, Tasks API
+- **Google APIs** - Gmail API, Tasks API, Calendar API
 - **golang.org/x/oauth2** - OAuth2 authentication
 - **logrus** - Logging
 - **html-to-markdown/v2** (`github.com/JohannesKaufmann/html-to-markdown/v2`) - HTML to Markdown conversion
 - **yaml.v3** (`gopkg.in/yaml.v3`) - YAML marshaling for frontmatter
 - **go-jsonnet** (`github.com/google/go-jsonnet`) - Jsonnet parsing for gmailctl integration
+- **go-ical** (`github.com/emersion/go-ical`) - ICS/iCalendar parsing for calendar import
 
 ## Common Gotchas
 
