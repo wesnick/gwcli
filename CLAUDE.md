@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**gwcli** is a command-line Gmail client forked from cmdg. Unlike the original cmdg (which was a TUI email client), gwcli is a pure CLI tool designed for non-interactive use, shell scripting, and AI agent integration.
+**gwcli** is a command-line Gmail and Google Tasks client forked from cmdg. Unlike the original cmdg (which was a TUI email client), gwcli is a pure CLI tool designed for non-interactive use, shell scripting, and AI agent integration.
 
 **Key architectural change from cmdg:** The TUI components have been completely removed. All interactive terminal UI code (Pine/Alpine-like interface) has been stripped out, leaving only the CLI command structure.
 
@@ -89,6 +89,8 @@ The `CmdG` struct is the central object passed to all command handlers.
 - **`batch.go`** - Batch operations (reading multiple message IDs from stdin)
 - **`output.go`** - Output formatting (JSON vs tabular text)
 - **`format.go`** - Email formatting (markdown, HTML, plain text with YAML frontmatter)
+- **`tasklists.go`** - Task list operations (list, create, delete)
+- **`tasks.go`** - Task operations (list, read, create, complete, delete)
 
 Each command handler follows the pattern:
 ```go
@@ -217,6 +219,7 @@ Required OAuth scopes:
 - `https://www.googleapis.com/auth/gmail.modify`
 - `https://www.googleapis.com/auth/gmail.settings.basic`
 - `https://www.googleapis.com/auth/gmail.labels`
+- `https://www.googleapis.com/auth/tasks`
 
 #### Service Account (Google Workspace Domain-Wide Delegation)
 
@@ -233,6 +236,7 @@ For Google Workspace accounts, you can use a service account to impersonate user
    - `https://www.googleapis.com/auth/gmail.modify`
    - `https://www.googleapis.com/auth/gmail.settings.basic`
    - `https://www.googleapis.com/auth/gmail.labels`
+   - `https://www.googleapis.com/auth/tasks`
 9. Use the `--user` flag to specify which user to impersonate:
    ```bash
    gwcli --user user@example.com messages list
@@ -318,10 +322,67 @@ You can also symlink to gmailctl's config:
 ln -s ~/.gmailctl/config.jsonnet ~/.config/gwcli/config.jsonnet
 ```
 
+## Google Tasks Commands
+
+gwcli supports Google Tasks API for managing task lists and tasks.
+
+### Task Lists
+
+```bash
+# List all task lists
+gwcli tasklists list
+gwcli tasklists list --json
+
+# Create a new task list
+gwcli tasklists create "Work Projects"
+
+# Delete a task list
+gwcli tasklists delete <tasklist-id>
+gwcli tasklists delete <tasklist-id> --force
+```
+
+### Tasks
+
+```bash
+# List tasks in a task list
+gwcli tasks list <tasklist-id>
+gwcli tasks list <tasklist-id> --include-completed
+gwcli tasks list <tasklist-id> --json
+
+# Create a new task
+gwcli tasks create <tasklist-id> --title "Review PR"
+gwcli tasks create <tasklist-id> --title "Review PR" --notes "Check tests" --due "2024-12-31T00:00:00Z"
+
+# Read task details
+gwcli tasks read <tasklist-id> <task-id>
+gwcli tasks read <tasklist-id> <task-id> --json
+
+# Mark task as completed
+gwcli tasks complete <tasklist-id> <task-id>
+
+# Delete a task
+gwcli tasks delete <tasklist-id> <task-id>
+gwcli tasks delete <tasklist-id> <task-id> --force
+```
+
+### Service Account Usage
+
+For Google Workspace accounts using service accounts:
+
+```bash
+# List task lists for a specific user
+gwcli --user user@example.com tasklists list
+
+# Create task for a user
+gwcli --user user@example.com tasks create <tasklist-id> --title "New Task"
+```
+
+Note: Service accounts require domain-wide delegation with the `https://www.googleapis.com/auth/tasks` scope authorized in Google Workspace Admin Console.
+
 ## Dependencies
 
 - **Kong** (`github.com/alecthomas/kong`) - CLI parsing (not Cobra)
-- **Google APIs** - Gmail API
+- **Google APIs** - Gmail API, Tasks API
 - **golang.org/x/oauth2** - OAuth2 authentication
 - **logrus** - Logging
 - **html-to-markdown/v2** (`github.com/JohannesKaufmann/html-to-markdown/v2`) - HTML to Markdown conversion

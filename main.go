@@ -124,6 +124,49 @@ type CLI struct {
 
 		Diff struct{} `cmd:"" help:"Show diff between local config and Gmail"`
 	} `cmd:"" help:"gmailctl filter management"`
+
+	Tasklists struct {
+		List struct{} `cmd:"" help:"List all task lists"`
+
+		Create struct {
+			Title string `arg:"" help:"Title for the new task list"`
+		} `cmd:"" help:"Create a new task list"`
+
+		Delete struct {
+			TasklistID string `arg:"" name:"tasklist-id" help:"ID of the task list to delete"`
+			Force      bool   `name:"force" short:"f" help:"Skip confirmation"`
+		} `cmd:"" help:"Delete a task list"`
+	} `cmd:"" help:"Manage Google Tasks lists"`
+
+	Tasks struct {
+		List struct {
+			TasklistID       string `arg:"" name:"tasklist-id" help:"Task list ID"`
+			IncludeCompleted bool   `name:"include-completed" short:"a" help:"Include completed tasks"`
+		} `cmd:"" help:"List tasks in a task list"`
+
+		Create struct {
+			TasklistID string `arg:"" name:"tasklist-id" help:"Task list ID"`
+			Title      string `name:"title" short:"t" required:"" help:"Task title"`
+			Notes      string `name:"notes" short:"n" help:"Task notes"`
+			Due        string `name:"due" short:"d" help:"Due date (RFC3339 format)"`
+		} `cmd:"" help:"Create a new task"`
+
+		Read struct {
+			TasklistID string `arg:"" name:"tasklist-id" help:"Task list ID"`
+			TaskID     string `arg:"" name:"task-id" help:"Task ID"`
+		} `cmd:"" help:"Get task details"`
+
+		Complete struct {
+			TasklistID string `arg:"" name:"tasklist-id" help:"Task list ID"`
+			TaskID     string `arg:"" name:"task-id" help:"Task ID"`
+		} `cmd:"" help:"Mark a task as completed"`
+
+		Delete struct {
+			TasklistID string `arg:"" name:"tasklist-id" help:"Task list ID"`
+			TaskID     string `arg:"" name:"task-id" help:"Task ID"`
+			Force      bool   `name:"force" short:"f" help:"Skip confirmation"`
+		} `cmd:"" help:"Delete a task"`
+	} `cmd:"" help:"Manage Google Tasks"`
 }
 
 func main() {
@@ -352,6 +395,102 @@ func main() {
 	case "gmailctl diff":
 		cmdCtx := context.Background()
 		if err := runGmailctlDiff(cmdCtx, cli.Config, cli.User, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "tasklists list":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runTasklistsList(cmdCtx, conn, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "tasklists create <title>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runTasklistsCreate(cmdCtx, conn, cli.Tasklists.Create.Title, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "tasklists delete <tasklist-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runTasklistsDelete(cmdCtx, conn, cli.Tasklists.Delete.TasklistID, cli.Tasklists.Delete.Force, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "tasks list <tasklist-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runTasksList(cmdCtx, conn, cli.Tasks.List.TasklistID, cli.Tasks.List.IncludeCompleted, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "tasks create <tasklist-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runTasksCreate(cmdCtx, conn, cli.Tasks.Create.TasklistID, cli.Tasks.Create.Title, cli.Tasks.Create.Notes, cli.Tasks.Create.Due, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "tasks read <tasklist-id> <task-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runTasksRead(cmdCtx, conn, cli.Tasks.Read.TasklistID, cli.Tasks.Read.TaskID, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "tasks complete <tasklist-id> <task-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runTasksComplete(cmdCtx, conn, cli.Tasks.Complete.TasklistID, cli.Tasks.Complete.TaskID, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "tasks delete <tasklist-id> <task-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runTasksDelete(cmdCtx, conn, cli.Tasks.Delete.TasklistID, cli.Tasks.Delete.TaskID, cli.Tasks.Delete.Force, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}

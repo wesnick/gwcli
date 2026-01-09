@@ -15,6 +15,28 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
+func TestCmdGHasTasksService(t *testing.T) {
+	// Create a mock HTTP client
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	if conn.TasksService() == nil {
+		t.Error("TasksService() returned nil, expected *tasks.Service")
+	}
+}
+
 func TestGetTokenInfoHandlesStringExpiresIn(t *testing.T) {
 	const tokenInfoJSON = `{
 		"email": "user@example.com",

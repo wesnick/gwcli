@@ -26,6 +26,7 @@ import (
 	drive "google.golang.org/api/drive/v3"
 	gmail "google.golang.org/api/gmail/v1"
 	people "google.golang.org/api/people/v1"
+	"google.golang.org/api/tasks/v1"
 )
 
 const (
@@ -84,6 +85,7 @@ type CmdG struct {
 	gmail        *gmail.Service
 	drive        *drive.Service
 	people       *people.Service
+	tasks        *tasks.Service
 	messageCache map[string]*Message
 	labelCache   map[string]*Label
 	labelsLoaded bool // tracks whether labels have been loaded from config
@@ -207,6 +209,25 @@ func New(configDir string, userEmail string, verbose bool) (*CmdG, error) {
 		// For service accounts, we can't set up Drive and People APIs the same way
 		// Just set up the Gmail client which we already have
 		conn.authedClient = nil // Service accounts don't use the same auth flow
+
+		// Initialize Tasks service for service accounts
+		credFile2, err := os.Open(paths.Credentials)
+		if err != nil {
+			return nil, errors.Wrapf(err, "opening credentials for tasks service")
+		}
+		defer credFile2.Close()
+
+		serviceAcctAuth, err := gmailctl.NewServiceAccountAuthenticator(credFile2, userEmail)
+		if err != nil {
+			return nil, errors.Wrapf(err, "creating service account authenticator for tasks")
+		}
+
+		tasksSvc, err := serviceAcctAuth.TasksService(ctx)
+		if err != nil {
+			return nil, errors.Wrapf(err, "creating tasks service for service account")
+		}
+		conn.tasks = tasksSvc
+
 		if verbose {
 			log.Infof("Service account connection ready")
 		}
@@ -322,7 +343,16 @@ func (c *CmdG) setupClients() error {
 		if err != nil {
 			return errors.Wrap(err, "creating People client")
 		}
-		c.drive.UserAgent = userAgent()
+		c.people.UserAgent = userAgent()
+	}
+	// Set up tasks client.
+	{
+		var err error
+		c.tasks, err = tasks.New(c.authedClient)
+		if err != nil {
+			return errors.Wrap(err, "creating Tasks client")
+		}
+		c.tasks.UserAgent = userAgent()
 	}
 	return nil
 }
@@ -496,6 +526,11 @@ func (c *CmdG) Labels() []*Label {
 // GmailService returns the Gmail API service.
 func (c *CmdG) GmailService() *gmail.Service {
 	return c.gmail
+}
+
+// TasksService returns the Google Tasks API service client.
+func (c *CmdG) TasksService() *tasks.Service {
+	return c.tasks
 }
 
 // GetProfile returns the profile for the current user.

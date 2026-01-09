@@ -16,6 +16,7 @@ import (
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
+	"google.golang.org/api/tasks/v1"
 )
 
 // NewAuthenticator creates an Authenticator instance from credentials JSON file contents.
@@ -78,6 +79,7 @@ func clientFromCredentials(credentials io.Reader) (*oauth2.Config, error) {
 		gmail.GmailModifyScope,
 		gmail.GmailSettingsBasicScope,
 		gmail.GmailLabelsScope,
+		tasks.TasksScope,
 	)
 }
 
@@ -130,6 +132,7 @@ func (a *ServiceAccountAuthenticator) Service(ctx context.Context) (*gmail.Servi
 		gmail.GmailModifyScope,
 		gmail.GmailSettingsBasicScope,
 		gmail.GmailLabelsScope,
+		tasks.TasksScope,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parsing service account credentials: %w", err)
@@ -140,6 +143,27 @@ func (a *ServiceAccountAuthenticator) Service(ctx context.Context) (*gmail.Servi
 
 	// Create the Gmail service with the service account credentials
 	return gmail.NewService(ctx, option.WithTokenSource(config.TokenSource(ctx)))
+}
+
+// TasksService creates a Google Tasks API service using service account credentials.
+// The service account must have domain-wide delegation enabled and the necessary scopes authorized.
+func (a *ServiceAccountAuthenticator) TasksService(ctx context.Context) (*tasks.Service, error) {
+	config, err := google.JWTConfigFromJSON(
+		a.credBytes,
+		gmail.GmailModifyScope,
+		gmail.GmailSettingsBasicScope,
+		gmail.GmailLabelsScope,
+		tasks.TasksScope,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("parsing service account credentials: %w", err)
+	}
+
+	// Set the user to impersonate
+	config.Subject = a.userEmail
+
+	// Create the Tasks service with the service account credentials
+	return tasks.NewService(ctx, option.WithTokenSource(config.TokenSource(ctx)))
 }
 
 // IsServiceAccount detects if the credentials JSON is for a service account.
