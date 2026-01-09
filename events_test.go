@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	gwcli "github.com/wesnick/gwcli/pkg/gwcli"
+	"google.golang.org/api/calendar/v3"
 )
 
 func TestRunEventsList(t *testing.T) {
@@ -301,60 +302,44 @@ func TestRunEventsListWithAttendees(t *testing.T) {
 
 func TestFormatEventTime(t *testing.T) {
 	tests := []struct {
-		name         string
-		startDate    string
-		startTime    string
-		expectedDate string
-		expectedTime string
+		name     string
+		event    *calendar.Event
+		wantDate string
+		wantTime string
 	}{
 		{
-			name:         "datetime event",
-			startTime:    "2024-01-15T10:00:00-08:00",
-			expectedDate: "2024-01-15",
-			expectedTime: "10:00",
+			name: "timed event",
+			event: &calendar.Event{
+				Start: &calendar.EventDateTime{DateTime: "2024-01-15T10:00:00-08:00"},
+			},
+			wantDate: "2024-01-15",
+			wantTime: "10:00",
 		},
 		{
-			name:         "all-day event",
-			startDate:    "2024-01-15",
-			expectedDate: "2024-01-15",
-			expectedTime: "all-day",
+			name: "all-day event",
+			event: &calendar.Event{
+				Start: &calendar.EventDateTime{Date: "2024-01-15"},
+			},
+			wantDate: "2024-01-15",
+			wantTime: "all-day",
+		},
+		{
+			name:     "nil start",
+			event:    &calendar.Event{},
+			wantDate: "",
+			wantTime: "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ev := &mockEvent{
-				startDate:     tt.startDate,
-				startDateTime: tt.startTime,
+			date, timeStr := formatEventTime(tt.event)
+			if date != tt.wantDate {
+				t.Errorf("formatEventTime() date = %q, want %q", date, tt.wantDate)
 			}
-			date, timeStr := formatEventTimeFromMock(ev)
-			if date != tt.expectedDate {
-				t.Errorf("formatEventTime() date = %q, expected %q", date, tt.expectedDate)
-			}
-			if timeStr != tt.expectedTime {
-				t.Errorf("formatEventTime() time = %q, expected %q", timeStr, tt.expectedTime)
+			if timeStr != tt.wantTime {
+				t.Errorf("formatEventTime() time = %q, want %q", timeStr, tt.wantTime)
 			}
 		})
 	}
-}
-
-// mockEvent is a simple struct for testing formatEventTime logic
-type mockEvent struct {
-	startDate     string
-	startDateTime string
-}
-
-// formatEventTimeFromMock is a test helper that mimics formatEventTime logic
-func formatEventTimeFromMock(ev *mockEvent) (date, timeStr string) {
-	if ev.startDateTime != "" {
-		// Parse RFC3339
-		date = ev.startDateTime[:10]
-		if len(ev.startDateTime) > 11 {
-			timeStr = ev.startDateTime[11:16]
-		}
-	} else if ev.startDate != "" {
-		date = ev.startDate
-		timeStr = "all-day"
-	}
-	return date, timeStr
 }
