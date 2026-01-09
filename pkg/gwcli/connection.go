@@ -209,6 +209,25 @@ func New(configDir string, userEmail string, verbose bool) (*CmdG, error) {
 		// For service accounts, we can't set up Drive and People APIs the same way
 		// Just set up the Gmail client which we already have
 		conn.authedClient = nil // Service accounts don't use the same auth flow
+
+		// Initialize Tasks service for service accounts
+		credFile2, err := os.Open(paths.Credentials)
+		if err != nil {
+			return nil, errors.Wrapf(err, "opening credentials for tasks service")
+		}
+		defer credFile2.Close()
+
+		serviceAcctAuth, err := gmailctl.NewServiceAccountAuthenticator(credFile2, userEmail)
+		if err != nil {
+			return nil, errors.Wrapf(err, "creating service account authenticator for tasks")
+		}
+
+		tasksSvc, err := serviceAcctAuth.TasksService(ctx)
+		if err != nil {
+			return nil, errors.Wrapf(err, "creating tasks service for service account")
+		}
+		conn.tasks = tasksSvc
+
 		if verbose {
 			log.Infof("Service account connection ready")
 		}
