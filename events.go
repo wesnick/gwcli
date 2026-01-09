@@ -216,6 +216,69 @@ func eventOutputFromEvent(ev *calendar.Event, calendarID string) eventOutput {
 	return out
 }
 
+// runEventsRead gets details of a single event.
+func runEventsRead(ctx context.Context, conn *gwcli.CmdG, calendarID, eventID string, out *outputWriter) error {
+	if calendarID == "" {
+		calendarID = "primary"
+	}
+	if eventID == "" {
+		return fmt.Errorf("event ID is required")
+	}
+
+	out.writeVerbose("Fetching event %s from calendar %s...", eventID, calendarID)
+
+	svc := conn.CalendarService()
+	if svc == nil {
+		return fmt.Errorf("calendar service not initialized")
+	}
+
+	ev, err := svc.Events.Get(calendarID, eventID).Context(ctx).Do()
+	if err != nil {
+		return fmt.Errorf("failed to get event: %w", err)
+	}
+
+	if out.json {
+		return out.writeJSON(eventOutputFromEvent(ev, calendarID))
+	}
+
+	// Text output with details
+	out.writeMessage(fmt.Sprintf("Summary: %s", ev.Summary))
+
+	date, timeStr := formatEventTime(ev)
+	if timeStr == "all-day" {
+		out.writeMessage(fmt.Sprintf("Date: %s (all day)", date))
+	} else {
+		out.writeMessage(fmt.Sprintf("When: %s %s", date, timeStr))
+	}
+
+	if ev.Location != "" {
+		out.writeMessage(fmt.Sprintf("Location: %s", ev.Location))
+	}
+
+	if ev.Description != "" {
+		out.writeMessage(fmt.Sprintf("Description: %s", ev.Description))
+	}
+
+	if len(ev.Attendees) > 0 {
+		out.writeMessage("Attendees:")
+		for _, a := range ev.Attendees {
+			name := a.Email
+			if a.DisplayName != "" {
+				name = a.DisplayName
+			}
+			out.writeMessage(fmt.Sprintf("  - %s (%s)", name, a.ResponseStatus))
+		}
+	}
+
+	if ev.HtmlLink != "" {
+		out.writeMessage(fmt.Sprintf("Link: %s", ev.HtmlLink))
+	}
+
+	out.writeMessage(fmt.Sprintf("ID: %s", ev.Id))
+
+	return nil
+}
+
 // formatEventTime extracts date and time strings for display.
 func formatEventTime(ev *calendar.Event) (date, timeStr string) {
 	if ev.Start == nil {
