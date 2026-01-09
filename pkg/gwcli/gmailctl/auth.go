@@ -16,6 +16,7 @@ import (
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
+	"google.golang.org/api/tasks/v1"
 )
 
 // NewAuthenticator creates an Authenticator instance from credentials JSON file contents.
@@ -78,6 +79,7 @@ func clientFromCredentials(credentials io.Reader) (*oauth2.Config, error) {
 		gmail.GmailModifyScope,
 		gmail.GmailSettingsBasicScope,
 		gmail.GmailLabelsScope,
+		tasks.TasksScope,
 	)
 }
 
@@ -130,6 +132,7 @@ func (a *ServiceAccountAuthenticator) Service(ctx context.Context) (*gmail.Servi
 		gmail.GmailModifyScope,
 		gmail.GmailSettingsBasicScope,
 		gmail.GmailLabelsScope,
+		tasks.TasksScope,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parsing service account credentials: %w", err)
