@@ -6,3 +6,5 @@ cmdg
 .worktrees/
 /dist/
 *.gwcli
+
+to_import/

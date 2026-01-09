@@ -38,12 +38,12 @@ just vet
 
 ```bash
 # Test specific package
-go test ./pkg/cmdg
-go test ./pkg/dialog
+go test ./pkg/gwcli
+go test ./pkg/gwcli/gmailctl/...
 go test ./pkg/gpg
 
 # Run specific test
-go test -run TestFunctionName ./pkg/cmdg
+go test -run TestFunctionName ./pkg/gwcli
 
 # Verbose test output
 go test -v ./...
@@ -67,9 +67,9 @@ type CLI struct {
 
 Commands are dispatched via switch statement on `ctx.Command()` which returns strings like `"messages list"` or `"messages read <message-id>"`.
 
-### Core Package: pkg/cmdg
+### Core Package: pkg/gwcli
 
-**`pkg/cmdg/connection.go`** contains the main `CmdG` struct which manages:
+**`pkg/gwcli/connection.go`** contains the main `CmdG` struct which manages:
 - Gmail, Drive, and People API clients
 - Message and label caches
 - OAuth2 authentication
@@ -77,9 +77,9 @@ Commands are dispatched via switch statement on `ctx.Command()` which returns st
 
 The `CmdG` struct is the central object passed to all command handlers.
 
-**`pkg/cmdg/message.go`** handles message parsing, MIME multipart processing, and email body extraction (both plain text and HTML).
+**`pkg/gwcli/message.go`** handles message parsing, MIME multipart processing, and email body extraction (both plain text and HTML).
 
-**`pkg/cmdg/configure.go`** handles OAuth2 setup flow.
+**`pkg/gwcli/configure.go`** handles OAuth2 setup flow.
 
 ### Command Handlers (root directory)
 
@@ -107,10 +107,9 @@ All commands check `out.json` flag to determine output format.
 ### Authentication Flow
 
 1. User runs `gwcli configure`
-2. `runConfigure()` calls `cmdg.Configure()` which prompts for OAuth client ID/secret
-3. Opens browser for OAuth consent
-4. Saves tokens to `~/.cmdg/cmdg.conf` (JSON format)
-5. Subsequent commands load config via `getConnection()` which creates authenticated `CmdG` instance
+2. `runConfigure()` calls `gwcli.Configure()` which opens browser for OAuth consent
+3. Saves tokens to `~/.config/gwcli/token.json` (JSON format)
+4. Subsequent commands load config via `getConnection()` which creates authenticated `CmdG` instance
 
 ### Batch Operations
 
@@ -275,22 +274,22 @@ gmailctl edit
 
 ### gmailctl Integration
 
-gwcli integrates with gmailctl for filter and label management. It includes wrapper commands that automatically inject the `--config` flag to use gwcli's config directory.
+gwcli integrates gmailctl functionality natively for filter and label management. The gmailctl library code has been vendored into `pkg/gwcli/gmailctl/`, providing native access to filter parsing, diff computation, and Gmail API operations.
 
-**Wrapper Commands (in gmailctl.go):**
+**Commands (in gmailctl.go):**
 - `gwcli gmailctl download [-o file]` - Download filters from Gmail to config.jsonnet
 - `gwcli gmailctl apply [-y]` - Apply config.jsonnet to Gmail (with optional skip confirmation)
 - `gwcli gmailctl diff` - Show diff between local config and Gmail
 
-**Implementation Pattern:**
-All wrapper commands use subprocess execution:
-1. Check if gmailctl binary exists in PATH (`exec.LookPath("gmailctl")`)
-2. Build command with `--config` flag: `gmailctl --config ~/.config/gwcli <command> [args]`
-3. Execute using `exec.Command()` with stdin/stdout/stderr passthrough
-4. Return matching exit codes
+**Implementation:**
+The gmailctl commands are implemented natively using vendored gmailctl library code in `pkg/gwcli/gmailctl/`. This provides:
+- Native integration with gwcli's authentication (OAuth and service accounts)
+- Better error handling and messaging
+- No external binary dependency
 
-**Manual gmailctl Usage:**
-For advanced commands (edit, init, test, debug), users can run gmailctl directly:
+The commands use `gwcli.InitializeAuth()` to obtain an authenticated Gmail service, then wrap it with `gmailctl.NewGmailAPI()` for filter/label operations.
+
+**For advanced gmailctl commands** (edit, test, debug), users can install and run gmailctl directly:
 ```bash
 gmailctl --config ~/.config/gwcli <command>
 ```
