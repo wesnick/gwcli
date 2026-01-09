@@ -1334,3 +1334,263 @@ func TestRunEventsQuickAddDefaultCalendar(t *testing.T) {
 		t.Errorf("expected request to use 'primary' calendar, got path %q", requestedPath)
 	}
 }
+
+func TestRunEventsImport(t *testing.T) {
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "POST" && strings.Contains(req.URL.Path, "/calendar/v3/calendars/primary/events/import") {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"id": "imported-event",
+						"iCalUID": "test-event@example.com",
+						"summary": "Imported Meeting",
+						"start": {"dateTime": "2024-01-15T10:00:00Z"},
+						"end": {"dateTime": "2024-01-15T11:00:00Z"}
+					}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	icsData := `BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:test-event@example.com
+DTSTART:20240115T100000Z
+DTEND:20240115T110000Z
+SUMMARY:Imported Meeting
+END:VEVENT
+END:VCALENDAR`
+
+	err = runEventsImport(context.Background(), conn, "primary", strings.NewReader(icsData), false, out)
+	if err != nil {
+		t.Fatalf("runEventsImport() error = %v", err)
+	}
+
+	var result importResult
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+
+	if result.Imported != 1 {
+		t.Errorf("expected 1 imported event, got %d", result.Imported)
+	}
+}
+
+func TestRunEventsImportDryRun(t *testing.T) {
+	// In dry-run mode, no API calls should be made
+	var apiCallCount int
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			apiCallCount++
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	icsData := `BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:test-event@example.com
+DTSTART:20240115T100000Z
+DTEND:20240115T110000Z
+SUMMARY:Test Meeting
+END:VEVENT
+END:VCALENDAR`
+
+	err = runEventsImport(context.Background(), conn, "primary", strings.NewReader(icsData), true, out)
+	if err != nil {
+		t.Fatalf("runEventsImport() error = %v", err)
+	}
+
+	// No API calls should have been made in dry-run mode (beyond connection setup)
+	// The connection setup makes some calls, but import-specific calls should be 0
+	var result importResult
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+
+	if result.Imported != 1 {
+		t.Errorf("expected 1 event (dry run), got %d", result.Imported)
+	}
+}
+
+func TestRunEventsImportMultipleEvents(t *testing.T) {
+	importCount := 0
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "POST" && strings.Contains(req.URL.Path, "/calendar/v3/calendars/primary/events/import") {
+				importCount++
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"id": "imported-event",
+						"summary": "Imported",
+						"start": {"dateTime": "2024-01-15T10:00:00Z"},
+						"end": {"dateTime": "2024-01-15T11:00:00Z"}
+					}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	icsData := `BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:event1@example.com
+DTSTART:20240115T100000Z
+DTEND:20240115T110000Z
+SUMMARY:Event 1
+END:VEVENT
+BEGIN:VEVENT
+UID:event2@example.com
+DTSTART:20240116T100000Z
+DTEND:20240116T110000Z
+SUMMARY:Event 2
+END:VEVENT
+END:VCALENDAR`
+
+	err = runEventsImport(context.Background(), conn, "primary", strings.NewReader(icsData), false, out)
+	if err != nil {
+		t.Fatalf("runEventsImport() error = %v", err)
+	}
+
+	if importCount != 2 {
+		t.Errorf("expected 2 import API calls, got %d", importCount)
+	}
+
+	var result importResult
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+
+	if result.Imported != 2 {
+		t.Errorf("expected 2 imported events, got %d", result.Imported)
+	}
+}
+
+func TestRunEventsImportEmptyICS(t *testing.T) {
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: false, writer: &buf}
+
+	icsData := `BEGIN:VCALENDAR
+VERSION:2.0
+END:VCALENDAR`
+
+	err = runEventsImport(context.Background(), conn, "primary", strings.NewReader(icsData), false, out)
+	if err != nil {
+		t.Fatalf("runEventsImport() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "No events found") {
+		t.Errorf("expected output to contain 'No events found', got %q", output)
+	}
+}
+
+func TestRunEventsImportDuplicate(t *testing.T) {
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "POST" && strings.Contains(req.URL.Path, "/calendar/v3/calendars/primary/events/import") {
+				// Return 409 Conflict for duplicate
+				return &http.Response{
+					StatusCode: http.StatusConflict,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(`{"error":{"code":409,"message":"Already exists"}}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	icsData := `BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:duplicate@example.com
+DTSTART:20240115T100000Z
+DTEND:20240115T110000Z
+SUMMARY:Duplicate Event
+END:VEVENT
+END:VCALENDAR`
+
+	err = runEventsImport(context.Background(), conn, "primary", strings.NewReader(icsData), false, out)
+	if err != nil {
+		t.Fatalf("runEventsImport() error = %v", err)
+	}
+
+	var result importResult
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+
+	// Duplicate should be counted as skipped
+	if result.Skipped != 1 {
+		t.Errorf("expected 1 skipped event, got %d", result.Skipped)
+	}
+	if result.Imported != 0 {
+		t.Errorf("expected 0 imported events, got %d", result.Imported)
+	}
+}

@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
 
 	gwcli "github.com/wesnick/gwcli/pkg/gwcli"
+	"github.com/wesnick/gwcli/pkg/gwcli/gcal"
 	"google.golang.org/api/calendar/v3"
 )
 
@@ -560,4 +562,87 @@ func parseDurationToMinutes(s string) (int64, error) {
 	}
 
 	return num * multiplier, nil
+}
+
+// importResult represents the result of an import operation.
+type importResult struct {
+	Imported   int      `json:"imported"`
+	Skipped    int      `json:"skipped"`
+	Failed     int      `json:"failed"`
+	FailedUIDs []string `json:"failedUids,omitempty"`
+}
+
+// runEventsImport imports events from ICS format.
+func runEventsImport(ctx context.Context, conn *gwcli.CmdG, calendarID string, r io.Reader, dryRun bool, out *outputWriter) error {
+	if calendarID == "" {
+		calendarID = "primary"
+	}
+
+	out.writeVerbose("Parsing ICS data...")
+
+	// Parse ICS
+	events, err := gcal.ParseICS(r)
+	if err != nil {
+		return fmt.Errorf("failed to parse ICS: %w", err)
+	}
+
+	if len(events) == 0 {
+		out.writeMessage("No events found in ICS data.")
+		return nil
+	}
+
+	out.writeVerbose("Found %d events to import", len(events))
+
+	if dryRun {
+		if out.json {
+			return out.writeJSON(importResult{Imported: len(events)})
+		}
+		out.writeMessage(fmt.Sprintf("Dry run: would import %d events", len(events)))
+		return nil
+	}
+
+	svc := conn.CalendarService()
+	if svc == nil {
+		return fmt.Errorf("calendar service not initialized")
+	}
+
+	result := importResult{}
+
+	for _, ev := range events {
+		// Use import API if event has iCalUID
+		if ev.ICalUID != "" {
+			_, err := svc.Events.Import(calendarID, ev.Event).Context(ctx).Do()
+			if err != nil {
+				// Check for duplicate (409 Conflict)
+				if strings.Contains(err.Error(), "409") {
+					result.Skipped++
+					out.writeVerbose("Skipped duplicate: %s", ev.ICalUID)
+					continue
+				}
+				result.Failed++
+				result.FailedUIDs = append(result.FailedUIDs, ev.ICalUID)
+				out.writeVerbose("Failed to import %s: %v", ev.ICalUID, err)
+				continue
+			}
+			result.Imported++
+			out.writeVerbose("Imported: %s", ev.Event.Summary)
+		} else {
+			// Fall back to insert for events without UID
+			_, err := svc.Events.Insert(calendarID, ev.Event).Context(ctx).Do()
+			if err != nil {
+				result.Failed++
+				out.writeVerbose("Failed to insert event: %v", err)
+				continue
+			}
+			result.Imported++
+		}
+	}
+
+	if out.json {
+		return out.writeJSON(result)
+	}
+
+	out.writeMessage(fmt.Sprintf("Import complete: %d imported, %d skipped, %d failed",
+		result.Imported, result.Skipped, result.Failed))
+	return nil
 }
