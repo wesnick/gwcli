@@ -170,6 +170,28 @@ func (a *ServiceAccountAuthenticator) TasksService(ctx context.Context) (*tasks.
 	return tasks.NewService(ctx, option.WithTokenSource(config.TokenSource(ctx)))
 }
 
+// CalendarService creates a Google Calendar API service using service account credentials.
+// The service account must have domain-wide delegation enabled and the necessary scopes authorized.
+func (a *ServiceAccountAuthenticator) CalendarService(ctx context.Context) (*calendar.Service, error) {
+	config, err := google.JWTConfigFromJSON(
+		a.credBytes,
+		gmail.GmailModifyScope,
+		gmail.GmailSettingsBasicScope,
+		gmail.GmailLabelsScope,
+		tasks.TasksScope,
+		calendar.CalendarScope,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("parsing service account credentials: %w", err)
+	}
+
+	// Set the user to impersonate
+	config.Subject = a.userEmail
+
+	// Create the Calendar service with the service account credentials
+	return calendar.NewService(ctx, option.WithTokenSource(config.TokenSource(ctx)))
+}
+
 // IsServiceAccount detects if the credentials JSON is for a service account.
 func IsServiceAccount(credentials io.Reader) (bool, error) {
 	credBytes, err := io.ReadAll(credentials)
