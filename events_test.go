@@ -584,3 +584,753 @@ func TestRunEventsReadDefaultCalendar(t *testing.T) {
 		t.Errorf("expected request to use 'primary' calendar, got path %q", requestedPath)
 	}
 }
+
+func TestRunEventsCreate(t *testing.T) {
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "POST" && strings.Contains(req.URL.Path, "/calendar/v3/calendars/primary/events") {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"id": "new-event",
+						"summary": "New Meeting",
+						"start": {"dateTime": "2024-01-20T14:00:00Z"},
+						"end": {"dateTime": "2024-01-20T15:00:00Z"},
+						"status": "confirmed"
+					}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	opts := createEventOptions{
+		summary: "New Meeting",
+		start:   "2024-01-20T14:00:00Z",
+		end:     "2024-01-20T15:00:00Z",
+	}
+	err = runEventsCreate(context.Background(), conn, "primary", opts, out)
+	if err != nil {
+		t.Fatalf("runEventsCreate() error = %v", err)
+	}
+
+	var result eventOutput
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+
+	if result.Summary != "New Meeting" {
+		t.Errorf("expected summary 'New Meeting', got %q", result.Summary)
+	}
+}
+
+func TestRunEventsCreateAllDay(t *testing.T) {
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "POST" && strings.Contains(req.URL.Path, "/calendar/v3/calendars/primary/events") {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"id": "allday-event",
+						"summary": "Holiday",
+						"start": {"date": "2024-12-25"},
+						"end": {"date": "2024-12-26"},
+						"status": "confirmed"
+					}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	opts := createEventOptions{
+		summary: "Holiday",
+		start:   "2024-12-25",
+		allDay:  true,
+	}
+	err = runEventsCreate(context.Background(), conn, "primary", opts, out)
+	if err != nil {
+		t.Fatalf("runEventsCreate() error = %v", err)
+	}
+
+	var result eventOutput
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+
+	if result.Summary != "Holiday" {
+		t.Errorf("expected summary 'Holiday', got %q", result.Summary)
+	}
+	if !result.AllDay {
+		t.Error("expected event to be all-day")
+	}
+}
+
+func TestRunEventsCreateMissingSummary(t *testing.T) {
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	opts := createEventOptions{
+		summary: "",
+		start:   "2024-01-20T14:00:00Z",
+	}
+	err = runEventsCreate(context.Background(), conn, "primary", opts, out)
+	if err == nil {
+		t.Fatal("expected error for missing summary, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "summary is required") {
+		t.Errorf("expected error to contain 'summary is required', got %q", err.Error())
+	}
+}
+
+func TestRunEventsCreateMissingStart(t *testing.T) {
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	opts := createEventOptions{
+		summary: "Meeting",
+		start:   "",
+	}
+	err = runEventsCreate(context.Background(), conn, "primary", opts, out)
+	if err == nil {
+		t.Fatal("expected error for missing start, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "start time is required") {
+		t.Errorf("expected error to contain 'start time is required', got %q", err.Error())
+	}
+}
+
+func TestRunEventsCreateTextOutput(t *testing.T) {
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "POST" && strings.Contains(req.URL.Path, "/calendar/v3/calendars/primary/events") {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"id": "new-event",
+						"summary": "New Meeting",
+						"start": {"dateTime": "2024-01-20T14:00:00Z"},
+						"end": {"dateTime": "2024-01-20T15:00:00Z"},
+						"status": "confirmed",
+						"htmlLink": "https://calendar.google.com/event?eid=xxx"
+					}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: false, writer: &buf}
+
+	opts := createEventOptions{
+		summary: "New Meeting",
+		start:   "2024-01-20T14:00:00Z",
+		end:     "2024-01-20T15:00:00Z",
+	}
+	err = runEventsCreate(context.Background(), conn, "primary", opts, out)
+	if err != nil {
+		t.Fatalf("runEventsCreate() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Created event:") {
+		t.Errorf("expected output to contain 'Created event:', got %q", output)
+	}
+	if !strings.Contains(output, "New Meeting") {
+		t.Errorf("expected output to contain 'New Meeting', got %q", output)
+	}
+}
+
+func TestRunEventsQuickAdd(t *testing.T) {
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "POST" && strings.Contains(req.URL.Path, "/calendar/v3/calendars/primary/events/quickAdd") {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"id": "quick-event",
+						"summary": "Lunch with Bob",
+						"start": {"dateTime": "2024-01-21T12:00:00-08:00"},
+						"end": {"dateTime": "2024-01-21T13:00:00-08:00"},
+						"status": "confirmed"
+					}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	err = runEventsQuickAdd(context.Background(), conn, "primary", "Lunch with Bob tomorrow at noon", out)
+	if err != nil {
+		t.Fatalf("runEventsQuickAdd() error = %v", err)
+	}
+
+	var result eventOutput
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+
+	if result.Summary != "Lunch with Bob" {
+		t.Errorf("expected summary 'Lunch with Bob', got %q", result.Summary)
+	}
+}
+
+func TestRunEventsQuickAddEmptyText(t *testing.T) {
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	err = runEventsQuickAdd(context.Background(), conn, "primary", "", out)
+	if err == nil {
+		t.Fatal("expected error for empty text, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "text is required") {
+		t.Errorf("expected error to contain 'text is required', got %q", err.Error())
+	}
+}
+
+func TestRunEventsQuickAddTextOutput(t *testing.T) {
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "POST" && strings.Contains(req.URL.Path, "/calendar/v3/calendars/primary/events/quickAdd") {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"id": "quick-event",
+						"summary": "Lunch with Bob",
+						"start": {"dateTime": "2024-01-21T12:00:00-08:00"},
+						"end": {"dateTime": "2024-01-21T13:00:00-08:00"},
+						"status": "confirmed",
+						"htmlLink": "https://calendar.google.com/event?eid=xxx"
+					}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: false, writer: &buf}
+
+	err = runEventsQuickAdd(context.Background(), conn, "primary", "Lunch with Bob tomorrow at noon", out)
+	if err != nil {
+		t.Fatalf("runEventsQuickAdd() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Created event:") {
+		t.Errorf("expected output to contain 'Created event:', got %q", output)
+	}
+	if !strings.Contains(output, "Lunch with Bob") {
+		t.Errorf("expected output to contain 'Lunch with Bob', got %q", output)
+	}
+}
+
+func TestParseDurationToMinutes(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    int64
+		wantErr bool
+	}{
+		{"15", 15, false},
+		{"15m", 15, false},
+		{"1h", 60, false},
+		{"2h", 120, false},
+		{"1d", 1440, false},
+		{"2d", 2880, false},
+		{"1w", 10080, false},
+		{"30m", 30, false},
+		{"", 0, true},
+		{"abc", 0, true},
+		{"1x", 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := parseDurationToMinutes(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseDurationToMinutes(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("parseDurationToMinutes(%q) = %d, want %d", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseReminderSpec(t *testing.T) {
+	tests := []struct {
+		input       string
+		wantMinutes int64
+		wantMethod  string
+		wantErr     bool
+	}{
+		{"15m popup", 15, "popup", false},
+		{"1h email", 60, "email", false},
+		{"30 popup", 30, "popup", false},
+		{"2d email", 2880, "email", false},
+		{"1w popup", 10080, "popup", false},
+		{"15m", 15, "popup", false}, // Default to popup
+		{"", 0, "", true},
+		{"invalid", 0, "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			minutes, method, err := parseReminderSpec(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseReminderSpec(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if minutes != tt.wantMinutes {
+				t.Errorf("parseReminderSpec(%q) minutes = %d, want %d", tt.input, minutes, tt.wantMinutes)
+			}
+			if method != tt.wantMethod {
+				t.Errorf("parseReminderSpec(%q) method = %q, want %q", tt.input, method, tt.wantMethod)
+			}
+		})
+	}
+}
+
+func TestParseReminders(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   []string
+		wantLen int
+		wantErr bool
+	}{
+		{
+			name:    "empty",
+			input:   []string{},
+			wantLen: 0,
+			wantErr: false,
+		},
+		{
+			name:    "single reminder",
+			input:   []string{"15m popup"},
+			wantLen: 1,
+			wantErr: false,
+		},
+		{
+			name:    "multiple reminders",
+			input:   []string{"15m popup", "1h email"},
+			wantLen: 2,
+			wantErr: false,
+		},
+		{
+			name:    "invalid reminder",
+			input:   []string{"invalid"},
+			wantLen: 0,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reminders, err := parseReminders(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseReminders() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if len(reminders) != tt.wantLen {
+				t.Errorf("parseReminders() returned %d reminders, want %d", len(reminders), tt.wantLen)
+			}
+		})
+	}
+}
+
+func TestRunEventsCreateWithAttendees(t *testing.T) {
+	var capturedBody string
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "POST" && strings.Contains(req.URL.Path, "/calendar/v3/calendars/primary/events") {
+				body, _ := io.ReadAll(req.Body)
+				capturedBody = string(body)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"id": "new-event",
+						"summary": "Team Meeting",
+						"start": {"dateTime": "2024-01-20T14:00:00Z"},
+						"end": {"dateTime": "2024-01-20T15:00:00Z"},
+						"status": "confirmed",
+						"attendees": [
+							{"email": "alice@example.com"},
+							{"email": "bob@example.com"}
+						]
+					}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	opts := createEventOptions{
+		summary:   "Team Meeting",
+		start:     "2024-01-20T14:00:00Z",
+		end:       "2024-01-20T15:00:00Z",
+		attendees: []string{"alice@example.com", "bob@example.com"},
+	}
+	err = runEventsCreate(context.Background(), conn, "primary", opts, out)
+	if err != nil {
+		t.Fatalf("runEventsCreate() error = %v", err)
+	}
+
+	// Verify that attendees were included in the request
+	if !strings.Contains(capturedBody, "alice@example.com") {
+		t.Errorf("expected request body to contain 'alice@example.com', got %q", capturedBody)
+	}
+	if !strings.Contains(capturedBody, "bob@example.com") {
+		t.Errorf("expected request body to contain 'bob@example.com', got %q", capturedBody)
+	}
+
+	var result eventOutput
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+
+	if len(result.Attendees) != 2 {
+		t.Errorf("expected 2 attendees in output, got %d", len(result.Attendees))
+	}
+}
+
+func TestRunEventsCreateWithReminders(t *testing.T) {
+	var capturedBody string
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "POST" && strings.Contains(req.URL.Path, "/calendar/v3/calendars/primary/events") {
+				body, _ := io.ReadAll(req.Body)
+				capturedBody = string(body)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"id": "new-event",
+						"summary": "Team Meeting",
+						"start": {"dateTime": "2024-01-20T14:00:00Z"},
+						"end": {"dateTime": "2024-01-20T15:00:00Z"},
+						"status": "confirmed",
+						"reminders": {
+							"useDefault": false,
+							"overrides": [
+								{"method": "popup", "minutes": 15},
+								{"method": "email", "minutes": 60}
+							]
+						}
+					}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	opts := createEventOptions{
+		summary:   "Team Meeting",
+		start:     "2024-01-20T14:00:00Z",
+		end:       "2024-01-20T15:00:00Z",
+		reminders: []string{"15m popup", "1h email"},
+	}
+	err = runEventsCreate(context.Background(), conn, "primary", opts, out)
+	if err != nil {
+		t.Fatalf("runEventsCreate() error = %v", err)
+	}
+
+	// Verify that reminders were included in the request
+	// Note: Go's json marshaling omits false boolean values, so we check for
+	// the presence of overrides which indicates custom reminders
+	if !strings.Contains(capturedBody, `"reminders"`) {
+		t.Errorf("expected request body to contain reminders field, got %q", capturedBody)
+	}
+	if !strings.Contains(capturedBody, `"overrides"`) {
+		t.Errorf("expected request body to contain overrides field, got %q", capturedBody)
+	}
+	if !strings.Contains(capturedBody, `"method":"popup"`) {
+		t.Errorf("expected request body to contain popup method, got %q", capturedBody)
+	}
+	if !strings.Contains(capturedBody, `"method":"email"`) {
+		t.Errorf("expected request body to contain email method, got %q", capturedBody)
+	}
+
+	var result eventOutput
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+
+	if result.Reminders == nil {
+		t.Fatal("expected reminders in output")
+	}
+	if len(result.Reminders.Overrides) != 2 {
+		t.Errorf("expected 2 reminder overrides, got %d", len(result.Reminders.Overrides))
+	}
+}
+
+func TestRunEventsCreateDefaultEnd(t *testing.T) {
+	// Test that when end is not specified, it defaults to 1 hour after start
+	var capturedBody string
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "POST" && strings.Contains(req.URL.Path, "/calendar/v3/calendars/primary/events") {
+				body, _ := io.ReadAll(req.Body)
+				capturedBody = string(body)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"id": "new-event",
+						"summary": "Quick Meeting",
+						"start": {"dateTime": "2024-01-20T14:00:00Z"},
+						"end": {"dateTime": "2024-01-20T15:00:00Z"},
+						"status": "confirmed"
+					}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	opts := createEventOptions{
+		summary: "Quick Meeting",
+		start:   "2024-01-20T14:00:00Z",
+		// No end specified - should default to 1 hour later
+	}
+	err = runEventsCreate(context.Background(), conn, "primary", opts, out)
+	if err != nil {
+		t.Fatalf("runEventsCreate() error = %v", err)
+	}
+
+	// Verify that the end time is 1 hour after start
+	if !strings.Contains(capturedBody, "2024-01-20T15:00:00Z") {
+		t.Errorf("expected end time to be 1 hour after start, got body: %q", capturedBody)
+	}
+}
+
+func TestRunEventsCreateDefaultCalendar(t *testing.T) {
+	var requestedPath string
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requestedPath = req.URL.Path
+			if req.Method == "POST" {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"id": "new-event",
+						"summary": "Meeting",
+						"start": {"dateTime": "2024-01-20T14:00:00Z"},
+						"end": {"dateTime": "2024-01-20T15:00:00Z"},
+						"status": "confirmed"
+					}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	opts := createEventOptions{
+		summary: "Meeting",
+		start:   "2024-01-20T14:00:00Z",
+	}
+	// Pass empty calendarID to test default behavior
+	err = runEventsCreate(context.Background(), conn, "", opts, out)
+	if err != nil {
+		t.Fatalf("runEventsCreate() error = %v", err)
+	}
+
+	// Verify that "primary" was used as the default calendar ID
+	if !strings.Contains(requestedPath, "/calendars/primary/events") {
+		t.Errorf("expected request to use 'primary' calendar, got path %q", requestedPath)
+	}
+}
+
+func TestRunEventsQuickAddDefaultCalendar(t *testing.T) {
+	var requestedPath string
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requestedPath = req.URL.Path
+			if req.Method == "POST" {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"id": "quick-event",
+						"summary": "Lunch",
+						"start": {"dateTime": "2024-01-21T12:00:00-08:00"},
+						"end": {"dateTime": "2024-01-21T13:00:00-08:00"},
+						"status": "confirmed"
+					}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+
+	// Pass empty calendarID to test default behavior
+	err = runEventsQuickAdd(context.Background(), conn, "", "Lunch tomorrow at noon", out)
+	if err != nil {
+		t.Fatalf("runEventsQuickAdd() error = %v", err)
+	}
+
+	// Verify that "primary" was used as the default calendar ID
+	if !strings.Contains(requestedPath, "/calendars/primary/events/quickAdd") {
+		t.Errorf("expected request to use 'primary' calendar, got path %q", requestedPath)
+	}
+}
