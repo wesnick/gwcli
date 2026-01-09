@@ -25,22 +25,32 @@ type messageListOutput struct {
 	Snippet  string   `json:"snippet"`
 }
 
-// runMessagesList lists messages in a label
 func runMessagesList(ctx context.Context, conn *gwcli.CmdG, label string, limit int, unreadOnly bool, out *outputWriter) error {
-	// Resolve label name to ID
+	out.writeVerbose("Loading labels from config...")
+	if err := conn.LoadLabels(ctx, out.verbose); err != nil {
+		return fmt.Errorf("failed to load labels: %w", err)
+	}
+
 	labels := conn.Labels()
+	out.writeVerbose("Loaded %d labels", len(labels))
 
 	labelID := label
 	if label != "" {
 		found := false
 		for _, l := range labels {
+			out.writeVerbose("  Checking label: ID=%s Name=%s", l.ID, l.Label)
 			if strings.EqualFold(l.Label, label) || l.ID == label {
 				labelID = l.ID
 				found = true
+				out.writeVerbose("  -> Matched! Using label ID: %s", labelID)
 				break
 			}
 		}
 		if !found {
+			out.writeVerbose("Available labels:")
+			for _, l := range labels {
+				out.writeVerbose("  - %s (ID: %s)", l.Label, l.ID)
+			}
 			return fmt.Errorf("label not found: %s", label)
 		}
 	}
@@ -585,32 +595,38 @@ func runMessagesRead(ctx context.Context, conn *gwcli.CmdG, messageID string, ra
 	return nil
 }
 
-// runMessagesSearch searches for messages using Gmail query syntax
 func runMessagesSearch(ctx context.Context, conn *gwcli.CmdG, query string, limit int, out *outputWriter) error {
-	// Search uses empty label to search all mail
+	out.writeVerbose("Searching with query: %s", query)
+
 	page, err := conn.ListMessages(ctx, "", query, "")
 	if err != nil {
 		return fmt.Errorf("failed to search messages: %w", err)
 	}
+
+	out.writeVerbose("Found %d messages", len(page.Messages))
 
 	if len(page.Messages) == 0 {
 		out.writeMessage("No messages found")
 		return nil
 	}
 
-	// Preload message metadata
 	if err := page.PreloadSubjects(ctx); err != nil {
 		return fmt.Errorf("failed to preload messages: %w", err)
 	}
 
-	// Limit the number of messages if needed
 	messages := page.Messages
 	if limit > 0 && len(messages) > limit {
 		messages = messages[:limit]
+		out.writeVerbose("Limited to %d messages", limit)
 	}
 
-	// Load labels for display
+	out.writeVerbose("Loading labels from config...")
+	if err := conn.LoadLabels(ctx, out.verbose); err != nil {
+		return fmt.Errorf("failed to load labels: %w", err)
+	}
+
 	labels := conn.Labels()
+	out.writeVerbose("Loaded %d labels for display", len(labels))
 
 	// Reuse list output logic
 	if out.json {
@@ -928,7 +944,6 @@ func runMessagesMarkUnread(ctx context.Context, conn *gwcli.CmdG, messageID stri
 	return err
 }
 
-// runMessagesMove moves messages to a different label
 func runMessagesMove(ctx context.Context, conn *gwcli.CmdG, messageID, toLabelName string, stdin bool, verbose bool, out *outputWriter) error {
 	var ids []string
 	var err error
@@ -945,18 +960,28 @@ func runMessagesMove(ctx context.Context, conn *gwcli.CmdG, messageID, toLabelNa
 		ids = []string{messageID}
 	}
 
-	// Resolve label name/ID
+	out.writeVerbose("Loading labels from config...")
+	if err := conn.LoadLabels(ctx, out.verbose); err != nil {
+		return fmt.Errorf("failed to load labels: %w", err)
+	}
+
 	labels := conn.Labels()
+	out.writeVerbose("Loaded %d labels, resolving '%s'...", len(labels), toLabelName)
 
 	toLabelID := ""
 	for _, l := range labels {
 		if strings.EqualFold(l.Label, toLabelName) || l.ID == toLabelName {
 			toLabelID = l.ID
+			out.writeVerbose("Resolved label '%s' to ID '%s'", toLabelName, toLabelID)
 			break
 		}
 	}
 
 	if toLabelID == "" {
+		out.writeVerbose("Label '%s' not found. Available labels:", toLabelName)
+		for _, l := range labels {
+			out.writeVerbose("  - %s (ID: %s)", l.Label, l.ID)
+		}
 		return fmt.Errorf("label not found: %s", toLabelName)
 	}
 

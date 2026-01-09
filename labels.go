@@ -19,9 +19,14 @@ type labelListOutput struct {
 	Color           string `json:"color,omitempty"`
 }
 
-// runLabelsList lists all labels
 func runLabelsList(ctx context.Context, conn *gwcli.CmdG, systemOnly, userOnly bool, out *outputWriter) error {
+	out.writeVerbose("Loading labels from config...")
+	if err := conn.LoadLabels(ctx, out.verbose); err != nil {
+		return fmt.Errorf("failed to load labels: %w", err)
+	}
+
 	labels := conn.Labels()
+	out.writeVerbose("Loaded %d labels", len(labels))
 
 	// Filter
 	filtered := []*gwcli.Label{}
@@ -70,7 +75,6 @@ func runLabelsList(ctx context.Context, conn *gwcli.CmdG, systemOnly, userOnly b
 	return out.writeTable(headers, rows)
 }
 
-// runLabelsApply applies a label to messages
 func runLabelsApply(ctx context.Context, conn *gwcli.CmdG, labelID, messageID string, stdin bool, verbose bool, out *outputWriter) error {
 	var ids []string
 	var err error
@@ -87,8 +91,13 @@ func runLabelsApply(ctx context.Context, conn *gwcli.CmdG, labelID, messageID st
 		ids = []string{messageID}
 	}
 
-	// Resolve label
+	out.writeVerbose("Loading labels from config...")
+	if err := conn.LoadLabels(ctx, out.verbose); err != nil {
+		return fmt.Errorf("failed to load labels: %w", err)
+	}
+
 	labels := conn.Labels()
+	out.writeVerbose("Loaded %d labels, resolving '%s'...", len(labels), labelID)
 
 	resolvedID := labelID
 	found := false
@@ -96,11 +105,16 @@ func runLabelsApply(ctx context.Context, conn *gwcli.CmdG, labelID, messageID st
 		if strings.EqualFold(l.Label, labelID) || l.ID == labelID {
 			resolvedID = l.ID
 			found = true
+			out.writeVerbose("Resolved label '%s' to ID '%s'", labelID, resolvedID)
 			break
 		}
 	}
 
 	if !found {
+		out.writeVerbose("Label '%s' not found. Available labels:", labelID)
+		for _, l := range labels {
+			out.writeVerbose("  - %s (ID: %s)", l.Label, l.ID)
+		}
 		fmt.Fprintf(os.Stderr, "Warning: label '%s' not found in config\n", labelID)
 		fmt.Fprintf(os.Stderr, "If you need to create labels, use gmailctl\n")
 	}
@@ -126,7 +140,6 @@ func runLabelsApply(ctx context.Context, conn *gwcli.CmdG, labelID, messageID st
 	return err
 }
 
-// runLabelsRemove removes a label from messages
 func runLabelsRemove(ctx context.Context, conn *gwcli.CmdG, labelID, messageID string, stdin bool, verbose bool, out *outputWriter) error {
 	var ids []string
 	var err error
@@ -143,8 +156,13 @@ func runLabelsRemove(ctx context.Context, conn *gwcli.CmdG, labelID, messageID s
 		ids = []string{messageID}
 	}
 
-	// Resolve label
+	out.writeVerbose("Loading labels from config...")
+	if err := conn.LoadLabels(ctx, out.verbose); err != nil {
+		return fmt.Errorf("failed to load labels: %w", err)
+	}
+
 	labels := conn.Labels()
+	out.writeVerbose("Loaded %d labels, resolving '%s'...", len(labels), labelID)
 
 	resolvedID := labelID
 	found := false
@@ -152,11 +170,16 @@ func runLabelsRemove(ctx context.Context, conn *gwcli.CmdG, labelID, messageID s
 		if strings.EqualFold(l.Label, labelID) || l.ID == labelID {
 			resolvedID = l.ID
 			found = true
+			out.writeVerbose("Resolved label '%s' to ID '%s'", labelID, resolvedID)
 			break
 		}
 	}
 
 	if !found {
+		out.writeVerbose("Label '%s' not found. Available labels:", labelID)
+		for _, l := range labels {
+			out.writeVerbose("  - %s (ID: %s)", l.Label, l.ID)
+		}
 		fmt.Fprintf(os.Stderr, "Warning: label '%s' not found in config\n", labelID)
 		fmt.Fprintf(os.Stderr, "If you need to create labels, use gmailctl\n")
 	}

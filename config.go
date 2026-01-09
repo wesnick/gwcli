@@ -7,9 +7,8 @@ import (
 	"github.com/wesnick/gwcli/pkg/gwcli"
 )
 
-// getConnection creates a CmdG connection with authentication
 func getConnection(configDir string, userEmail string, verbose bool) (*gwcli.CmdG, error) {
-	conn, err := gwcli.New(configDir, userEmail)
+	conn, err := gwcli.New(configDir, userEmail, verbose)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create connection: %w", err)
 	}
