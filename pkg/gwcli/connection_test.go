@@ -37,6 +37,27 @@ func TestCmdGHasTasksService(t *testing.T) {
 	}
 }
 
+func TestCmdGHasCalendarService(t *testing.T) {
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}),
+	}
+
+	conn, err := NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	if conn.CalendarService() == nil {
+		t.Error("CalendarService() returned nil, expected *calendar.Service")
+	}
+}
+
 func TestGetTokenInfoHandlesStringExpiresIn(t *testing.T) {
 	const tokenInfoJSON = `{
 		"email": "user@example.com",

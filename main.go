@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/alecthomas/kong"
@@ -167,6 +168,91 @@ type CLI struct {
 			Force      bool   `name:"force" short:"f" help:"Skip confirmation"`
 		} `cmd:"" help:"Delete a task"`
 	} `cmd:"" help:"Manage Google Tasks"`
+
+	Calendars struct {
+		List struct {
+			MinAccessRole string `name:"min-access-role" help:"Minimum access role (freeBusyReader, reader, writer, owner)"`
+		} `cmd:"" help:"List all accessible calendars"`
+	} `cmd:"" help:"Google Calendar operations"`
+
+	Events struct {
+		List struct {
+			CalendarID   string `arg:"" optional:"" help:"Calendar ID (default: primary)"`
+			TimeMin      string `name:"time-min" help:"Start time (RFC3339)"`
+			TimeMax      string `name:"time-max" help:"End time (RFC3339)"`
+			Query        string `name:"query" short:"q" help:"Search query"`
+			MaxResults   int    `name:"max-results" default:"25" help:"Maximum events to return"`
+			SingleEvents bool   `name:"single-events" default:"true" help:"Expand recurring events"`
+		} `cmd:"" help:"List events in a calendar"`
+
+		Read struct {
+			EventID    string `arg:"" required:"" help:"Event ID"`
+			CalendarID string `name:"calendar" short:"c" help:"Calendar ID (default: primary)"`
+		} `cmd:"" help:"Get event details"`
+
+		Create struct {
+			CalendarID  string   `arg:"" optional:"" help:"Calendar ID (default: primary)"`
+			Summary     string   `name:"summary" short:"s" required:"" help:"Event title"`
+			Description string   `name:"description" short:"d" help:"Event description"`
+			Location    string   `name:"location" short:"l" help:"Event location"`
+			Start       string   `name:"start" required:"" help:"Start time (RFC3339 or YYYY-MM-DD for all-day)"`
+			End         string   `name:"end" help:"End time (RFC3339 or YYYY-MM-DD, default: start + 1 hour)"`
+			AllDay      bool     `name:"all-day" help:"Create all-day event"`
+			Attendees   []string `name:"attendee" short:"a" help:"Attendee email (can repeat)"`
+			Reminders   []string `name:"reminder" short:"r" help:"Reminder spec (e.g., '15m popup', '1h email')"`
+			ColorID     string   `name:"color" help:"Event color ID"`
+		} `cmd:"" help:"Create a new event"`
+
+		QuickAdd struct {
+			Text       string `arg:"" required:"" help:"Natural language event description"`
+			CalendarID string `name:"calendar" short:"c" help:"Calendar ID (default: primary)"`
+		} `cmd:"" name:"quickadd" help:"Create event from natural language"`
+
+		Update struct {
+			EventID     string `arg:"" required:"" help:"Event ID to update"`
+			CalendarID  string `name:"calendar" short:"c" help:"Calendar ID (default: primary)"`
+			Summary     string `name:"summary" short:"s" help:"New event title"`
+			Description string `name:"description" short:"d" help:"New event description"`
+			Location    string `name:"location" short:"l" help:"New event location"`
+			Start       string `name:"start" help:"New start time (RFC3339)"`
+			End         string `name:"end" help:"New end time (RFC3339)"`
+			ColorID     string `name:"color" help:"New event color ID"`
+		} `cmd:"" help:"Update an event"`
+
+		Delete struct {
+			EventID    string `arg:"" required:"" help:"Event ID to delete"`
+			CalendarID string `name:"calendar" short:"c" help:"Calendar ID (default: primary)"`
+			Force      bool   `name:"force" short:"f" help:"Skip confirmation"`
+		} `cmd:"" help:"Delete an event"`
+
+		Search struct {
+			Query       string   `arg:"" required:"" help:"Search query"`
+			CalendarIDs []string `name:"calendar" short:"c" help:"Calendar IDs to search (can repeat)"`
+			TimeMin     string   `name:"time-min" help:"Start time (RFC3339)"`
+			TimeMax     string   `name:"time-max" help:"End time (RFC3339)"`
+			MaxResults  int      `name:"max-results" default:"25" help:"Maximum events to return"`
+		} `cmd:"" help:"Search for events across calendars"`
+
+		Updated struct {
+			CalendarID string `arg:"" optional:"" help:"Calendar ID (default: primary)"`
+			UpdatedMin string `name:"updated-min" required:"" help:"Return events updated after this time (RFC3339)"`
+			TimeMin    string `name:"time-min" help:"Start time (RFC3339)"`
+			TimeMax    string `name:"time-max" help:"End time (RFC3339)"`
+			MaxResults int    `name:"max-results" default:"25" help:"Maximum events to return"`
+		} `cmd:"" help:"Find events modified since a timestamp"`
+
+		Conflicts struct {
+			CalendarID string `arg:"" optional:"" help:"Calendar ID (default: primary)"`
+			TimeMin    string `name:"time-min" help:"Start time (RFC3339, default: now)"`
+			TimeMax    string `name:"time-max" help:"End time (RFC3339, default: now + 30 days)"`
+		} `cmd:"" help:"Detect scheduling conflicts"`
+
+		Import struct {
+			CalendarID string `arg:"" optional:"" help:"Calendar ID (default: primary)"`
+			File       string `name:"file" short:"f" required:"" help:"ICS file path (- for stdin)"`
+			DryRun     bool   `name:"dry-run" help:"Parse and validate without importing"`
+		} `cmd:"" help:"Import events from ICS file"`
+	} `cmd:"" help:"Google Calendar event operations"`
 }
 
 func main() {
@@ -491,6 +577,183 @@ func main() {
 			os.Exit(3)
 		}
 		if err := runTasksDelete(cmdCtx, conn, cli.Tasks.Delete.TasklistID, cli.Tasks.Delete.TaskID, cli.Tasks.Delete.Force, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	// Calendar commands
+	case "calendars list":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runCalendarsList(cmdCtx, conn, cli.Calendars.List.MinAccessRole, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	// Event commands
+	case "events list", "events list <calendar-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runEventsList(cmdCtx, conn, cli.Events.List.CalendarID,
+			cli.Events.List.TimeMin, cli.Events.List.TimeMax, cli.Events.List.Query,
+			cli.Events.List.MaxResults, cli.Events.List.SingleEvents, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "events read <event-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runEventsRead(cmdCtx, conn, cli.Events.Read.CalendarID,
+			cli.Events.Read.EventID, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "events create", "events create <calendar-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		opts := createEventOptions{
+			summary:     cli.Events.Create.Summary,
+			description: cli.Events.Create.Description,
+			location:    cli.Events.Create.Location,
+			start:       cli.Events.Create.Start,
+			end:         cli.Events.Create.End,
+			allDay:      cli.Events.Create.AllDay,
+			attendees:   cli.Events.Create.Attendees,
+			reminders:   cli.Events.Create.Reminders,
+			colorID:     cli.Events.Create.ColorID,
+		}
+		if err := runEventsCreate(cmdCtx, conn, cli.Events.Create.CalendarID, opts, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "events quickadd <text>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runEventsQuickAdd(cmdCtx, conn, cli.Events.QuickAdd.CalendarID,
+			cli.Events.QuickAdd.Text, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "events update <event-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		opts := updateEventOptions{
+			summary:     cli.Events.Update.Summary,
+			description: cli.Events.Update.Description,
+			location:    cli.Events.Update.Location,
+			start:       cli.Events.Update.Start,
+			end:         cli.Events.Update.End,
+			colorID:     cli.Events.Update.ColorID,
+		}
+		if err := runEventsUpdate(cmdCtx, conn, cli.Events.Update.CalendarID,
+			cli.Events.Update.EventID, opts, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "events delete <event-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runEventsDelete(cmdCtx, conn, cli.Events.Delete.CalendarID,
+			cli.Events.Delete.EventID, cli.Events.Delete.Force, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "events search <query>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runEventsSearch(cmdCtx, conn, cli.Events.Search.CalendarIDs,
+			cli.Events.Search.Query, cli.Events.Search.TimeMin, cli.Events.Search.TimeMax,
+			cli.Events.Search.MaxResults, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "events updated", "events updated <calendar-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runEventsUpdated(cmdCtx, conn, cli.Events.Updated.CalendarID,
+			cli.Events.Updated.UpdatedMin, cli.Events.Updated.TimeMin, cli.Events.Updated.TimeMax,
+			cli.Events.Updated.MaxResults, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "events conflicts", "events conflicts <calendar-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runEventsConflicts(cmdCtx, conn, cli.Events.Conflicts.CalendarID,
+			cli.Events.Conflicts.TimeMin, cli.Events.Conflicts.TimeMax, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "events import", "events import <calendar-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		var reader io.Reader
+		if cli.Events.Import.File == "-" {
+			reader = os.Stdin
+		} else {
+			f, err := os.Open(cli.Events.Import.File)
+			if err != nil {
+				out.writeError(fmt.Errorf("failed to open file: %w", err))
+				os.Exit(2)
+			}
+			defer f.Close()
+			reader = f
+		}
+		if err := runEventsImport(cmdCtx, conn, cli.Events.Import.CalendarID,
+			reader, cli.Events.Import.DryRun, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}

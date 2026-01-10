@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
 	"google.golang.org/api/tasks/v1"
@@ -80,6 +81,7 @@ func clientFromCredentials(credentials io.Reader) (*oauth2.Config, error) {
 		gmail.GmailSettingsBasicScope,
 		gmail.GmailLabelsScope,
 		tasks.TasksScope,
+		calendar.CalendarScope,
 	)
 }
 
@@ -133,6 +135,7 @@ func (a *ServiceAccountAuthenticator) Service(ctx context.Context) (*gmail.Servi
 		gmail.GmailSettingsBasicScope,
 		gmail.GmailLabelsScope,
 		tasks.TasksScope,
+		calendar.CalendarScope,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parsing service account credentials: %w", err)
@@ -154,6 +157,7 @@ func (a *ServiceAccountAuthenticator) TasksService(ctx context.Context) (*tasks.
 		gmail.GmailSettingsBasicScope,
 		gmail.GmailLabelsScope,
 		tasks.TasksScope,
+		calendar.CalendarScope,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parsing service account credentials: %w", err)
@@ -164,6 +168,28 @@ func (a *ServiceAccountAuthenticator) TasksService(ctx context.Context) (*tasks.
 
 	// Create the Tasks service with the service account credentials
 	return tasks.NewService(ctx, option.WithTokenSource(config.TokenSource(ctx)))
+}
+
+// CalendarService creates a Google Calendar API service using service account credentials.
+// The service account must have domain-wide delegation enabled and the necessary scopes authorized.
+func (a *ServiceAccountAuthenticator) CalendarService(ctx context.Context) (*calendar.Service, error) {
+	config, err := google.JWTConfigFromJSON(
+		a.credBytes,
+		gmail.GmailModifyScope,
+		gmail.GmailSettingsBasicScope,
+		gmail.GmailLabelsScope,
+		tasks.TasksScope,
+		calendar.CalendarScope,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("parsing service account credentials: %w", err)
+	}
+
+	// Set the user to impersonate
+	config.Subject = a.userEmail
+
+	// Create the Calendar service with the service account credentials
+	return calendar.NewService(ctx, option.WithTokenSource(config.TokenSource(ctx)))
 }
 
 // IsServiceAccount detects if the credentials JSON is for a service account.

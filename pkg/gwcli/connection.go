@@ -23,6 +23,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/wesnick/gwcli/pkg/gwcli/gmailctl"
 	"golang.org/x/oauth2"
+	"google.golang.org/api/calendar/v3"
 	drive "google.golang.org/api/drive/v3"
 	gmail "google.golang.org/api/gmail/v1"
 	people "google.golang.org/api/people/v1"
@@ -86,6 +87,7 @@ type CmdG struct {
 	drive        *drive.Service
 	people       *people.Service
 	tasks        *tasks.Service
+	calendar     *calendar.Service
 	messageCache map[string]*Message
 	labelCache   map[string]*Label
 	labelsLoaded bool // tracks whether labels have been loaded from config
@@ -228,6 +230,24 @@ func New(configDir string, userEmail string, verbose bool) (*CmdG, error) {
 		}
 		conn.tasks = tasksSvc
 
+		// Initialize Calendar service for service accounts
+		credFile3, err := os.Open(paths.Credentials)
+		if err != nil {
+			return nil, errors.Wrapf(err, "opening credentials for calendar service")
+		}
+		defer credFile3.Close()
+
+		serviceAcctAuth2, err := gmailctl.NewServiceAccountAuthenticator(credFile3, userEmail)
+		if err != nil {
+			return nil, errors.Wrapf(err, "creating service account authenticator for calendar")
+		}
+
+		calSvc, err := serviceAcctAuth2.CalendarService(ctx)
+		if err != nil {
+			return nil, errors.Wrapf(err, "creating calendar service for service account")
+		}
+		conn.calendar = calSvc
+
 		if verbose {
 			log.Infof("Service account connection ready")
 		}
@@ -353,6 +373,15 @@ func (c *CmdG) setupClients() error {
 			return errors.Wrap(err, "creating Tasks client")
 		}
 		c.tasks.UserAgent = userAgent()
+	}
+	// Set up calendar client.
+	{
+		var err error
+		c.calendar, err = calendar.New(c.authedClient)
+		if err != nil {
+			return errors.Wrap(err, "creating Calendar client")
+		}
+		c.calendar.UserAgent = userAgent()
 	}
 	return nil
 }
@@ -531,6 +560,11 @@ func (c *CmdG) GmailService() *gmail.Service {
 // TasksService returns the Google Tasks API service client.
 func (c *CmdG) TasksService() *tasks.Service {
 	return c.tasks
+}
+
+// CalendarService returns the Google Calendar API service client.
+func (c *CmdG) CalendarService() *calendar.Service {
+	return c.calendar
 }
 
 // GetProfile returns the profile for the current user.
