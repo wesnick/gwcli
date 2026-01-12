@@ -353,12 +353,14 @@ gwcli messages list
 # List unread messages only
 gwcli messages list --unread-only
 
-# Read a message (plain text preferred)
+# Read a message (default: markdown output)
 gwcli messages read <message-id>
 
-# Read message preferring HTML output
-gwcli messages read --prefer-html <message-id>
-gwcli messages read -H <message-id>
+# Read message with raw HTML output
+gwcli messages read --raw-html <message-id>
+
+# Prefer plain text body over HTML
+gwcli messages read --prefer-plain <message-id>
 
 # Get just headers
 gwcli messages read --headers-only <message-id>
@@ -597,19 +599,26 @@ gwcli --json messages list | jq '.[0]'
 }
 ```
 
-## Piping HTML to Markdown
+## Output Formats
 
-Since gwcli outputs raw HTML (not rendered), you can pipe to converters:
+By default, `gwcli messages read` converts HTML email bodies to markdown automatically (using the html-to-markdown library). No external tools are needed.
+
+| Flag | Output Format |
+|------|---------------|
+| (default) | Markdown with YAML frontmatter |
+| `--raw-html` | Raw HTML with HTML-formatted headers |
+| `--prefer-plain` | Plain text with YAML frontmatter |
+| `--raw` | Raw RFC822 format |
 
 ```bash
-# Install html2markdown (or similar tool)
-go install github.com/suntong/html2md@latest
+# Default: HTML converted to markdown
+gwcli messages read <msg-id>
 
-# Convert HTML emails to markdown
-gwcli messages read -H <msg-id> | html2md
+# Raw HTML (if you need the original HTML)
+gwcli messages read --raw-html <msg-id>
 
-# Or use pandoc
-gwcli messages read -H <msg-id> | pandoc -f html -t markdown
+# Plain text only
+gwcli messages read --prefer-plain <msg-id>
 ```
 
 ## Comparison with Source Projects

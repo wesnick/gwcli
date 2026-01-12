@@ -1,22 +1,26 @@
 ---
 name: gwcli
-description: This skill should be used when working with Gmail operations via the gwcli command-line tool. Use this skill when the user asks to interact with Gmail (read/send/search emails, manage labels, download attachments), automate email workflows, or needs help with gwcli commands.
+description: This skill should be used when working with Gmail, Google Tasks, or Google Calendar operations via the gwcli command-line tool. Use this skill when the user asks to interact with Gmail (read/send/search emails, manage labels, download attachments), manage Google Tasks (create/complete tasks), work with Google Calendar (create/list events), or needs help with gwcli commands.
 ---
 
 # gwcli
 
 ## Overview
 
-This skill provides comprehensive guidance for using gwcli, a command-line Gmail client with a resource-oriented interface (similar to kubectl). It enables automation of Gmail operations including message management, label operations, and attachment handling through a Unix-friendly CLI.
+This skill provides comprehensive guidance for using gwcli, a command-line client for Gmail, Google Tasks, and Google Calendar with a resource-oriented interface (similar to kubectl). It enables automation of operations including message management, label operations, attachment handling, task management, and calendar events through a Unix-friendly CLI.
 
 ## Core Capabilities
 
-gwcli provides four main resource types:
+gwcli provides these main resource types:
 
 1. **Messages** - Read, send, search, delete, mark read/unread, and move emails
 2. **Labels** - List labels, apply/remove labels to messages (creation via gmailctl)
 3. **Attachments** - List and download email attachments
 4. **Gmailctl** - Manage filters and labels via gmailctl integration (download, apply, diff)
+5. **Task Lists** - List, create, and delete Google Task lists
+6. **Tasks** - List, create, read, complete, and delete tasks
+7. **Calendars** - List accessible Google Calendars
+8. **Events** - List, create, read, update, delete, search, and import calendar events
 
 ## When to Use This Skill
 
@@ -27,6 +31,8 @@ Use this skill when the user:
 - Wants to search, filter, or process Gmail messages programmatically
 - Needs to manage labels or organize emails
 - Wants to download attachments in bulk
+- Needs to manage Google Tasks (create, complete, list tasks)
+- Wants to work with Google Calendar (create events, check schedule, find conflicts)
 
 ## Quick Start
 
@@ -60,6 +66,8 @@ gwcli <resource> <action> [arguments] [flags]
 gwcli messages list --unread-only
 gwcli labels list
 gwcli attachments download <message-id>
+gwcli tasks list <tasklist-id>
+gwcli events list
 ```
 
 ### gmailctl Integration
@@ -180,8 +188,14 @@ gwcli messages search "older_than:30d category:promotions"
 
 **Read individual messages:**
 ```bash
-# Read full message
+# Read message (default: markdown output with YAML frontmatter)
 gwcli messages read <message-id>
+
+# Raw HTML output
+gwcli messages read <message-id> --raw-html
+
+# Plain text output
+gwcli messages read <message-id> --prefer-plain
 
 # Headers only
 gwcli messages read <message-id> --headers-only
@@ -189,9 +203,18 @@ gwcli messages read <message-id> --headers-only
 # Raw RFC822 format
 gwcli messages read <message-id> --raw
 
-# JSON output
+# JSON output (includes all body formats)
 gwcli messages read <message-id> --json
 ```
+
+**Output Formats for `messages read`:**
+
+| Flag | Output Format |
+|------|---------------|
+| (default) | Markdown with YAML frontmatter (HTML auto-converted to markdown) |
+| `--raw-html` | Raw HTML with HTML-formatted headers |
+| `--prefer-plain` | Plain text with YAML frontmatter |
+| `--raw` | Raw RFC822 format |
 
 ### Sending Email
 
@@ -383,11 +406,127 @@ gwcli messages list --label "Invoices" --json | \
   done
 ```
 
+### Google Tasks
+
+**Task Lists:**
+```bash
+# List all task lists
+gwcli tasklists list
+gwcli tasklists list --json
+
+# Create a new task list
+gwcli tasklists create "Work Projects"
+
+# Delete a task list
+gwcli tasklists delete <tasklist-id>
+gwcli tasklists delete <tasklist-id> --force
+```
+
+**Tasks:**
+```bash
+# List tasks in a task list
+gwcli tasks list <tasklist-id>
+gwcli tasks list <tasklist-id> --include-completed
+gwcli tasks list <tasklist-id> --json
+
+# Create a new task
+gwcli tasks create <tasklist-id> --title "Review PR"
+gwcli tasks create <tasklist-id> --title "Review PR" --notes "Check tests" --due "2025-12-31T00:00:00Z"
+
+# Read task details
+gwcli tasks read <tasklist-id> <task-id>
+gwcli tasks read <tasklist-id> <task-id> --json
+
+# Mark task as completed
+gwcli tasks complete <tasklist-id> <task-id>
+
+# Delete a task
+gwcli tasks delete <tasklist-id> <task-id>
+gwcli tasks delete <tasklist-id> <task-id> --force
+```
+
+### Google Calendar
+
+**Calendars:**
+```bash
+# List all accessible calendars
+gwcli calendars list
+gwcli calendars list --json
+gwcli calendars list --min-access-role owner
+```
+
+**Events:**
+```bash
+# List upcoming events (default: primary calendar)
+gwcli events list
+gwcli events list work@group.calendar.google.com
+
+# List events in date range
+gwcli events list --time-min "2025-01-01T00:00:00Z" --time-max "2025-01-31T23:59:59Z"
+
+# Search events
+gwcli events list --query "meeting"
+
+# Get event details
+gwcli events read <event-id>
+gwcli events read <calendar-id> <event-id>
+gwcli events read <event-id> --json
+
+# Create event with full details
+gwcli events create --summary "Team Meeting" --start "2025-01-15T10:00:00Z" --end "2025-01-15T11:00:00Z"
+gwcli events create --summary "All Day Event" --start "2025-01-15" --all-day
+gwcli events create --summary "Meeting" --start "2025-01-15T10:00:00Z" --attendee alice@example.com --attendee bob@example.com
+
+# Quick add (natural language)
+gwcli events quickadd "Lunch with Bob tomorrow at noon"
+gwcli events quickadd <calendar-id> "Team standup every Monday at 9am"
+
+# Update event
+gwcli events update <event-id> --summary "New Title"
+gwcli events update <calendar-id> <event-id> --location "Conference Room B"
+
+# Delete event
+gwcli events delete <event-id>
+gwcli events delete <event-id> --force
+
+# Search across calendars
+gwcli events search "review"
+gwcli events search "review" --calendar primary --calendar work@group.calendar.google.com
+
+# Find recently updated events
+gwcli events updated --updated-min "2025-01-01T00:00:00Z"
+
+# Detect scheduling conflicts
+gwcli events conflicts
+gwcli events conflicts --time-max "2025-02-01T00:00:00Z"
+
+# Import ICS file
+gwcli events import --file meeting.ics
+gwcli events import --file meeting.ics --dry-run
+cat events.ics | gwcli events import --file -
+```
+
+**Reminders:**
+
+Reminder format: `<number>[w|d|h|m] [popup|email]`
+
+Examples:
+- `15` or `15m` - 15 minutes before, popup notification
+- `1h` - 1 hour before, popup
+- `2d popup` - 2 days before, popup
+- `1w email` - 1 week before, email
+
+```bash
+gwcli events create --summary "Meeting" --start "2025-01-15T10:00:00Z" \
+    --reminder "15m popup" --reminder "1h email"
+```
+
 ## Global Flags
 
 Available on all commands:
 
 - `--config <path>` - Config directory path (default: ~/.config/gwcli)
+- `--user <email>` - User email for service account impersonation
 - `--json` - Output in JSON format for programmatic processing
 - `--verbose` - Enable verbose logging (shows which config.jsonnet is loaded)
 - `--no-color` - Disable colored output
@@ -398,7 +537,9 @@ Available on all commands:
 
 **Destructive operations require confirmation:**
 - `gwcli messages delete` requires `--force` flag
-- `gwcli labels delete` requires `--force` flag
+- `gwcli tasklists delete` requires `--force` flag
+- `gwcli tasks delete` requires `--force` flag
+- `gwcli events delete` requires `--force` flag
 
 This prevents accidental data loss.
 
@@ -517,9 +658,6 @@ gwcli messages list --label "Inbox" --json | \
 Delete old messages by category:
 
 ```bash
-#!/bin/bash
-# cleanup-old-emails.sh
-
 # Delete old promotions (90+ days)
 gwcli messages search "category:promotions older_than:90d" --json | \
   jq -r '.[].id' | \
@@ -536,9 +674,6 @@ gwcli messages search "category:social older_than:60d" --json | \
 Extract and organize attachments:
 
 ```bash
-#!/bin/bash
-# extract-invoices.sh
-
 LABEL="Invoices"
 OUTPUT_DIR="./invoices/$(date +%Y-%m)"
 
@@ -546,7 +681,6 @@ gwcli messages list --label "$LABEL" --json | \
   jq -r '.[].id' | \
   while read id; do
     echo "Processing message: $id"
-    # Downloads all attachments to OUTPUT_DIR with automatic conflict resolution
     gwcli attachments download "$id" --output-dir "$OUTPUT_DIR"
   done
 
@@ -557,33 +691,13 @@ echo "Downloaded to: $OUTPUT_DIR"
 
 Apply labels based on sender domain:
 
-**Note:** Labels must be defined in `~/.config/gwcli/config.jsonnet` first. Add them to the labels array:
-
-```jsonnet
-{
-  version: "v1alpha3",
-  labels: [
-    { name: "Emails/company.com" },
-    { name: "Emails/partner.org" },
-    { name: "Emails/client.net" },
-  ],
-  rules: []
-}
-```
-
-Then apply the config and run the labeling script:
+**Note:** Labels must be defined in `~/.config/gwcli/config.jsonnet` first.
 
 ```bash
-#!/bin/bash
-# auto-label-by-domain.sh
-
-# Labels must exist in config.jsonnet before running this script
 DOMAINS=("company.com" "partner.org" "client.net")
 
 for domain in "${DOMAINS[@]}"; do
   label="Emails/${domain}"
-
-  # Apply to recent emails from domain
   gwcli messages search "from:@${domain} newer_than:7d" --json | \
     jq -r '.[].id' | \
     gwcli labels apply "$label" --stdin
@@ -595,9 +709,6 @@ done
 Monitor for specific emails:
 
 ```bash
-#!/bin/bash
-# monitor-urgent.sh
-
 QUERY="subject:urgent is:unread"
 
 while true; do
@@ -611,6 +722,39 @@ while true; do
 
   sleep 300  # Check every 5 minutes
 done
+```
+
+### Calendar Conflict Detection
+
+Check for scheduling conflicts before creating events:
+
+```bash
+# Check next week for conflicts
+gwcli events conflicts --time-max "$(date -d '+7 days' -Iseconds)"
+
+# Create event only if no conflicts at that time
+gwcli events create --summary "Planning Meeting" \
+  --start "2025-01-15T14:00:00Z" \
+  --end "2025-01-15T15:00:00Z"
+```
+
+### Task Management Workflow
+
+```bash
+# Get default task list ID
+TASKLIST=$(gwcli tasklists list --json | jq -r '.[0].id')
+
+# Create tasks from a list
+while read task; do
+  gwcli tasks create "$TASKLIST" --title "$task"
+done << EOF
+Review PR #123
+Update documentation
+Send weekly report
+EOF
+
+# List incomplete tasks
+gwcli tasks list "$TASKLIST" --json | jq '.[] | select(.status != "completed")'
 ```
 
 ## Working with JSON Output
@@ -648,6 +792,23 @@ gwcli messages list --json | \
   jq 'group_by(.labels[]) | map({label: .[0].labels[0], count: length})'
 ```
 
+## Service Account Usage
+
+For Google Workspace accounts using service accounts with domain-wide delegation:
+
+```bash
+# List messages for a specific user
+gwcli --user user@example.com messages list
+
+# List task lists for a user
+gwcli --user user@example.com tasklists list
+
+# Create calendar event for a user
+gwcli --user user@example.com events create --summary "Meeting" --start "2025-01-15T10:00:00Z"
+```
+
+Note: Service accounts require domain-wide delegation with appropriate scopes authorized in Google Workspace Admin Console.
+
 ## Resources
 
 ### references/commands.md
@@ -659,19 +820,6 @@ Complete command reference with detailed documentation of all commands, flags, a
 - Learning about exit codes and output formats
 
 Load with: `Read references/commands.md`
-
-### scripts/
-
-The scripts directory contains example automation workflows:
-
-- `cleanup-old-emails.sh` - Periodic cleanup of old emails by category
-- `extract-invoices.sh` - Batch download attachments from labeled messages
-- `auto-label.sh` - Automatically apply labels based on sender rules
-
-These scripts can be:
-- Executed directly for automation
-- Modified for specific use cases
-- Used as templates for custom workflows
 
 ## Implementation Guidelines
 
@@ -706,11 +854,9 @@ gwcli messages search "from:unwanted@spam.com" --json | \
 
 ### "Download all PDF attachments"
 ```bash
-# Search for messages with PDF attachments and download them
 gwcli messages search "has:attachment filename:pdf" --json | \
   jq -r '.[].id' | \
   while read id; do
-    # Use --filename pattern to download only PDFs from each message
     gwcli attachments download "$id" --filename "*.pdf" --output-dir ./pdfs
   done
 ```
@@ -734,21 +880,35 @@ gwcli messages send \
 
 ### "Find and extract invoices"
 ```bash
-# Search for invoice emails with attachments
 gwcli messages search "subject:invoice has:attachment" --json | \
   jq -r '.[].id' | \
   while read id; do
-    # Download all attachments (defaults to ~/Downloads)
     gwcli attachments download "$id" --output-dir ./invoices
-
-    # Label for tracking
     echo "$id" | gwcli labels apply "Processed" --stdin
   done
+```
 
-# Alternative: Download only PDF invoices
-gwcli messages search "subject:invoice has:attachment" --json | \
-  jq -r '.[].id' | \
-  while read id; do
-    gwcli attachments download "$id" --filename "*.pdf" --output-dir ./invoices
-  done
+### "Create a task with due date"
+```bash
+gwcli tasks create <tasklist-id> \
+  --title "Complete quarterly report" \
+  --notes "Include Q4 financials" \
+  --due "2025-01-31T00:00:00Z"
+```
+
+### "Schedule a meeting"
+```bash
+gwcli events create \
+  --summary "Project Review" \
+  --start "2025-01-20T14:00:00Z" \
+  --end "2025-01-20T15:00:00Z" \
+  --location "Conference Room A" \
+  --attendee alice@example.com \
+  --attendee bob@example.com \
+  --reminder "15m popup"
+```
+
+### "Check my schedule for conflicts"
+```bash
+gwcli events conflicts --time-max "$(date -d '+14 days' -Iseconds)"
 ```
