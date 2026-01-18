@@ -54,6 +54,16 @@ func (o *outputWriter) writeMessage(msg string) {
 	fmt.Fprintln(o.writer, msg)
 }
 
+// WriteEmptyList outputs an empty list result
+// JSON mode: outputs [], Text mode: outputs the message
+func (o *outputWriter) WriteEmptyList(textMessage string) error {
+	if o.json {
+		return o.writeJSON([]interface{}{})
+	}
+	o.writeMessage(textMessage)
+	return nil
+}
+
 // writeError outputs an error message to stderr
 func (o *outputWriter) writeError(err error) {
 	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
