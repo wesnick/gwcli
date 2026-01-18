@@ -68,8 +68,7 @@ func runMessagesList(ctx context.Context, conn *gwcli.CmdG, label string, limit 
 	}
 
 	if len(page.Messages) == 0 {
-		out.writeMessage("No messages found")
-		return nil
+		return out.WriteEmptyList("No messages found")
 	}
 
 	// Preload message metadata
@@ -606,8 +605,7 @@ func runMessagesSearch(ctx context.Context, conn *gwcli.CmdG, query string, limi
 	out.writeVerbose("Found %d messages", len(page.Messages))
 
 	if len(page.Messages) == 0 {
-		out.writeMessage("No messages found")
-		return nil
+		return out.WriteEmptyList("No messages found")
 	}
 
 	if err := page.PreloadSubjects(ctx); err != nil {
