@@ -68,6 +68,9 @@ func runMessagesList(ctx context.Context, conn *gwcli.CmdG, label string, limit 
 	}
 
 	if len(page.Messages) == 0 {
+		if out.json {
+			return out.writeJSON([]messageListOutput{})
+		}
 		out.writeMessage("No messages found")
 		return nil
 	}
@@ -606,6 +609,9 @@ func runMessagesSearch(ctx context.Context, conn *gwcli.CmdG, query string, limi
 	out.writeVerbose("Found %d messages", len(page.Messages))
 
 	if len(page.Messages) == 0 {
+		if out.json {
+			return out.writeJSON([]messageListOutput{})
+		}
 		out.writeMessage("No messages found")
 		return nil
 	}

@@ -13,6 +13,7 @@ import (
 	"net/mail"
 	"net/textproto"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -124,8 +125,27 @@ func (c *CmdG) LabelCache(label *Label) *Label {
 
 // NewFake creates a fake client, used for testing.
 func NewFake(client *http.Client) (*CmdG, error) {
+	// Create a temp config file to prevent crashes in LoadLabels
+	tmpDir, err := os.MkdirTemp("", "gwcli_fake")
+	if err != nil {
+		return nil, err
+	}
+	// We don't clean this up as we don't have a way to signal teardown
+	// But it's just small temp files in /tmp
+
+	dummyConfig := `{ version: "v1alpha3", labels: [], rules: [] }`
+	configFile := filepath.Join(tmpDir, "config.jsonnet")
+	if err := os.WriteFile(configFile, []byte(dummyConfig), 0644); err != nil {
+		return nil, err
+	}
+
 	conn := &CmdG{
 		authedClient: client,
+		configPaths: &ConfigPaths{
+			Config: configFile,
+		},
+		messageCache: make(map[string]*Message),
+		labelCache:   make(map[string]*Label),
 	}
 	return conn, conn.setupClients()
 }
