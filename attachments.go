@@ -23,8 +23,7 @@ func runAttachmentsList(ctx context.Context, conn *gwcli.CmdG, messageID string,
 		return fmt.Errorf("failed to get attachments: %w", err)
 	}
 	if len(attachments) == 0 {
-		out.writeMessage("No attachments found")
-		return nil
+		return out.WriteEmptyList("No attachments found")
 	}
 
 	if out.json {
