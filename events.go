@@ -130,8 +130,7 @@ func runEventsList(ctx context.Context, conn *gwcli.CmdG, calendarID, timeMin, t
 	}
 
 	if len(resp.Items) == 0 {
-		out.writeMessage("No upcoming events found.")
-		return nil
+		return out.WriteEmptyList("No upcoming events found.")
 	}
 
 	headers := []string{"DATE", "TIME", "SUMMARY", "ID"}
@@ -587,8 +586,7 @@ func runEventsImport(ctx context.Context, conn *gwcli.CmdG, calendarID string, r
 	}
 
 	if len(events) == 0 {
-		out.writeMessage("No events found in ICS data.")
-		return nil
+		return out.WriteEmptyList("No events found in ICS data.")
 	}
 
 	out.writeVerbose("Found %d events to import", len(events))
@@ -797,8 +795,7 @@ func runEventsSearch(ctx context.Context, conn *gwcli.CmdG, calendarIDs []string
 	}
 
 	if len(allEvents) == 0 {
-		out.writeMessage("No matching events found.")
-		return nil
+		return out.WriteEmptyList("No matching events found.")
 	}
 
 	headers := []string{"DATE", "TIME", "SUMMARY", "CALENDAR", "ID"}
@@ -872,8 +869,7 @@ func runEventsUpdated(ctx context.Context, conn *gwcli.CmdG, calendarID, updated
 	}
 
 	if len(resp.Items) == 0 {
-		out.writeMessage(fmt.Sprintf("No events updated since %s", updatedMin))
-		return nil
+		return out.WriteEmptyList(fmt.Sprintf("No events updated since %s", updatedMin))
 	}
 
 	headers := []string{"UPDATED", "SUMMARY", "STATUS", "ID"}
@@ -945,8 +941,7 @@ func runEventsConflicts(ctx context.Context, conn *gwcli.CmdG, calendarID, timeM
 	}
 
 	if len(conflicts) == 0 {
-		out.writeMessage("No scheduling conflicts found.")
-		return nil
+		return out.WriteEmptyList("No scheduling conflicts found.")
 	}
 
 	out.writeMessage(fmt.Sprintf("Found %d conflicts:\n", len(conflicts)))
