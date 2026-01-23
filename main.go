@@ -5,11 +5,29 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
+	"strings"
 
 	"github.com/alecthomas/kong"
 )
 
 var version = "dev"
+
+func init() {
+	// If version is still "dev" (not set via ldflags), try to get it from build info.
+	// This works when the binary is installed via "go install github.com/...@version".
+	if version == "dev" {
+		if info, ok := debug.ReadBuildInfo(); ok {
+			v := info.Main.Version
+			// Only use the version if it's a clean semver tag (e.g., "v1.2.3").
+			// Ignore "(devel)" and pseudo-versions like "v0.0.0-20210101..." which
+			// indicate local builds or builds from non-tagged commits.
+			if v != "" && v != "(devel)" && !strings.Contains(v, "-0.") {
+				version = v
+			}
+		}
+	}
+}
 
 type CLI struct {
 	Config  string `help:"Config directory path" default:"~/.config/gwcli" type:"path"`
