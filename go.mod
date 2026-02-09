@@ -6,7 +6,7 @@ toolchain go1.24.7
 
 require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.0
-	github.com/alecthomas/kong v1.13.0
+	github.com/alecthomas/kong v1.14.0
 	github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608
 	github.com/fatih/color v1.18.0
 	github.com/google/go-jsonnet v0.21.0
