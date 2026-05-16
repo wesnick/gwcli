@@ -256,10 +256,13 @@ gwcli --config ~/.config/gwcli/user2 --user user2@example.com messages list
 
 **Label Discovery:**
 gwcli reads label definitions exclusively from:
-1. `~/.config/gwcli/config.jsonnet` (required - no API fallback)
+1. `~/.config/gwcli/config.jsonnet` (no API fallback for custom labels/rules)
 2. System labels (INBOX, TRASH, etc.) are automatically added
 
-If config.jsonnet is missing, gwcli will error with a helpful message pointing to gmailctl setup instructions.
+If config.jsonnet is missing, gwcli auto-creates a minimal one (empty
+`labels`/`rules`) at the config path on first label load and prints a message
+pointing to `gwcli gmailctl download` for importing existing filters/labels.
+System labels work out of the box with the minimal config.
 
 **Label Operations:**
 - `gwcli labels list` - List all labels
@@ -493,6 +496,7 @@ Note: Service accounts require domain-wide delegation with the `https://www.goog
 3. **No interactive prompts**: All commands must work non-interactively (for scripting)
 4. **Label IDs vs Names**: Always handle both - users may provide either
 5. **Label create/delete**: Use gmailctl for creating/deleting labels, not gwcli
+6. **Auto-created config.jsonnet**: On first label load, if `config.jsonnet` is absent, gwcli writes a minimal one (empty `labels`/`rules`) rather than erroring. It never overwrites an existing file. To seed it from the account's real filters/labels, run `gwcli gmailctl download`.
 
 ## Error Handling Pattern
 
