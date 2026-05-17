@@ -29,7 +29,7 @@ Additional components:
 
 ## OAuth Scopes
 
-gwcli requires the following OAuth 2.0 scopes. When setting up OAuth credentials in Google Cloud Console or authorizing domain-wide delegation for service accounts, you must enable all five scopes.
+gwcli requires the following OAuth 2.0 scopes. When setting up OAuth credentials in Google Cloud Console or authorizing domain-wide delegation for service accounts, you must enable all six scopes.
 
 ### Required Scopes
 
@@ -40,60 +40,80 @@ gwcli requires the following OAuth 2.0 scopes. When setting up OAuth credentials
 | `https://www.googleapis.com/auth/gmail.labels` | Create, read, update, and delete labels | Non-sensitive |
 | `https://www.googleapis.com/auth/tasks` | Create, edit, organize, and delete tasks | Sensitive |
 | `https://www.googleapis.com/auth/calendar` | Read/write access to calendars and events | Sensitive |
+| `https://www.googleapis.com/auth/drive` | Read/write access to Drive files (export, download, upload) | Restricted |
+
+**Drive scope note:** the full `drive` scope (not `drive.readonly`) is used so
+that Drive write operations (`drive upload`/`drive update`) work alongside
+read/export. It is only needed by the `artifacts download`, `drive`, and
+`drive export`/`get`/`list`/`search`/`upload`/`update` commands — Gmail, Tasks,
+and Calendar work without it. Existing OAuth users must re-run `gwcli
+configure` to re-consent after the scope was added (Google does not grant new
+scopes to an already-issued `token.json`). `artifacts list` is Gmail-only and
+does **not** require the Drive scope.
 
 ### Command-to-Scope Matrix
 
 This table shows which scopes are required for each command group:
 
-| Command | `gmail.modify` | `gmail.settings.basic` | `gmail.labels` | `tasks` | `calendar` |
-|---------|:--------------:|:----------------------:|:--------------:|:-------:|:----------:|
+| Command | `gmail.modify` | `gmail.settings.basic` | `gmail.labels` | `tasks` | `calendar` | `drive` |
+|---------|:--------------:|:----------------------:|:--------------:|:-------:|:----------:|:-------:|
 | **Messages** |
-| `messages list` | Required | - | - | - | - |
-| `messages read` | Required | - | - | - | - |
-| `messages search` | Required | - | - | - | - |
-| `messages send` | Required | - | - | - | - |
-| `messages delete` | Required | - | - | - | - |
-| `messages mark-read` | Required | - | - | - | - |
-| `messages mark-unread` | Required | - | - | - | - |
-| `messages move` | Required | - | - | - | - |
+| `messages list` | Required | - | - | - | - | - |
+| `messages read` | Required | - | - | - | - | - |
+| `messages search` | Required | - | - | - | - | - |
+| `messages send` | Required | - | - | - | - | - |
+| `messages delete` | Required | - | - | - | - | - |
+| `messages mark-read` | Required | - | - | - | - | - |
+| `messages mark-unread` | Required | - | - | - | - | - |
+| `messages move` | Required | - | - | - | - | - |
 | **Labels** |
-| `labels list` | - | - | Required | - | - |
-| `labels apply` | Required | - | Required | - | - |
-| `labels remove` | Required | - | Required | - | - |
+| `labels list` | - | - | Required | - | - | - |
+| `labels apply` | Required | - | Required | - | - | - |
+| `labels remove` | Required | - | Required | - | - | - |
 | **Attachments** |
-| `attachments list` | Required | - | - | - | - |
-| `attachments download` | Required | - | - | - | - |
+| `attachments list` | Required | - | - | - | - | - |
+| `attachments download` | Required | - | - | - | - | - |
+| **Artifacts** |
+| `artifacts list` | Required | - | - | - | - | - |
+| `artifacts download` | Required | - | - | - | - | Required |
+| **Drive** |
+| `drive get` | - | - | - | - | - | Required |
+| `drive export` | - | - | - | - | - | Required |
+| `drive list` | - | - | - | - | - | Required |
+| `drive search` | - | - | - | - | - | Required |
+| `drive upload` | - | - | - | - | - | Required |
+| `drive update` | - | - | - | - | - | Required |
 | **Filters** |
-| `filters list` | - | - | Required | - | - |
-| `filters get` | - | - | Required | - | - |
-| `filters create` | - | - | Required | - | - |
-| `filters delete` | - | - | Required | - | - |
+| `filters list` | - | - | Required | - | - | - |
+| `filters get` | - | - | Required | - | - | - |
+| `filters create` | - | - | Required | - | - | - |
+| `filters delete` | - | - | Required | - | - | - |
 | **Task Lists** |
-| `tasklists list` | - | - | - | Required | - |
-| `tasklists create` | - | - | - | Required | - |
-| `tasklists delete` | - | - | - | Required | - |
+| `tasklists list` | - | - | - | Required | - | - |
+| `tasklists create` | - | - | - | Required | - | - |
+| `tasklists delete` | - | - | - | Required | - | - |
 | **Tasks** |
-| `tasks list` | - | - | - | Required | - |
-| `tasks read` | - | - | - | Required | - |
-| `tasks create` | - | - | - | Required | - |
-| `tasks complete` | - | - | - | Required | - |
-| `tasks delete` | - | - | - | Required | - |
+| `tasks list` | - | - | - | Required | - | - |
+| `tasks read` | - | - | - | Required | - | - |
+| `tasks create` | - | - | - | Required | - | - |
+| `tasks complete` | - | - | - | Required | - | - |
+| `tasks delete` | - | - | - | Required | - | - |
 | **Calendars** |
-| `calendars list` | - | - | - | - | Required |
+| `calendars list` | - | - | - | - | Required | - |
 | **Events** |
-| `events list` | - | - | - | - | Required |
-| `events read` | - | - | - | - | Required |
-| `events create` | - | - | - | - | Required |
-| `events quickadd` | - | - | - | - | Required |
-| `events update` | - | - | - | - | Required |
-| `events delete` | - | - | - | - | Required |
-| `events search` | - | - | - | - | Required |
-| `events updated` | - | - | - | - | Required |
-| `events conflicts` | - | - | - | - | Required |
-| `events import` | - | - | - | - | Required |
+| `events list` | - | - | - | - | Required | - |
+| `events read` | - | - | - | - | Required | - |
+| `events create` | - | - | - | - | Required | - |
+| `events quickadd` | - | - | - | - | Required | - |
+| `events update` | - | - | - | - | Required | - |
+| `events delete` | - | - | - | - | Required | - |
+| `events search` | - | - | - | - | Required | - |
+| `events updated` | - | - | - | - | Required | - |
+| `events conflicts` | - | - | - | - | Required | - |
+| `events import` | - | - | - | - | Required | - |
 | **Auth** |
-| `auth token-info` | - | - | - | - | - |
-| `configure` | - | - | - | - | - |
+| `auth token-info` | - | - | - | - | - | - |
+| `configure` | - | - | - | - | - | - |
 
 **Note:** The `gmail.modify` scope provides broad message access. Google considers this a "restricted" scope requiring app verification for public distribution. For personal use or within your organization, verification is not required.
 
@@ -106,6 +126,7 @@ gwcli provides command-line access to Gmail, Google Tasks, and Google Calendar u
 - **Tasks**: Managing task lists and tasks (create, read, complete, delete)
 - **Calendar**: Managing calendars and events (list, create, update, delete, search, conflicts, import)
 - **Filters**: Direct Gmail filter CRUD (list, get, create, delete)
+- **Drive**: Direct Drive file access (get, export, list, search, upload, update) plus detection of Drive doc links in emails (`artifacts`)
 - **Output**: JSON output for easy parsing and automation
 
 ## Why gwcli?
@@ -183,13 +204,14 @@ gwcli reads all authentication material from `~/.config/gwcli/`. Pick the authen
 
 ### OAuth (Desktop flow)
 
-1. Visit the [Google Cloud Console](https://console.developers.google.com/), create (or reuse) a project, and enable the **Gmail API**, **Google Tasks API**, and **Google Calendar API**.
+1. Visit the [Google Cloud Console](https://console.developers.google.com/), create (or reuse) a project, and enable the **Gmail API**, **Google Tasks API**, **Google Calendar API**, and **Google Drive API**.
 2. Configure the OAuth consent screen and add the scopes gwcli needs (see [OAuth Scopes](#oauth-scopes) for details):
    - `https://www.googleapis.com/auth/gmail.modify`
    - `https://www.googleapis.com/auth/gmail.settings.basic`
    - `https://www.googleapis.com/auth/gmail.labels`
    - `https://www.googleapis.com/auth/tasks`
    - `https://www.googleapis.com/auth/calendar`
+   - `https://www.googleapis.com/auth/drive`
 3. Create an **OAuth Client ID** of type *Desktop app* and download the JSON credentials to `~/.config/gwcli/credentials.json`.
 4. Run `gwcli configure` (or `just configure`) to finish the flow. The command prints a URL, prompts for the returned code, and writes `token.json` in the same directory.
 
@@ -199,13 +221,14 @@ Once both files exist you can run every command with your personal Gmail account
 
 gwcli supports a service-account authenticator to impersonate Workspace users:
 
-1. In the Cloud Console, enable **Gmail API**, **Google Tasks API**, and **Google Calendar API**, create a Service Account, enable **Domain-wide Delegation**, and download the JSON key to `~/.config/gwcli/credentials.json`.
-2. In the Admin Console (`Security → API controls → Domain-wide delegation`) authorize the client ID from the JSON file with all five scopes:
+1. In the Cloud Console, enable **Gmail API**, **Google Tasks API**, **Google Calendar API**, and **Google Drive API**, create a Service Account, enable **Domain-wide Delegation**, and download the JSON key to `~/.config/gwcli/credentials.json`.
+2. In the Admin Console (`Security → API controls → Domain-wide delegation`) authorize the client ID from the JSON file with all six scopes:
    - `https://www.googleapis.com/auth/gmail.modify`
    - `https://www.googleapis.com/auth/gmail.settings.basic`
    - `https://www.googleapis.com/auth/gmail.labels`
    - `https://www.googleapis.com/auth/tasks`
    - `https://www.googleapis.com/auth/calendar`
+   - `https://www.googleapis.com/auth/drive` (only needed for `artifacts download` and the `drive` commands; DWD token exchange is per-scope-set, so an entry authorizing only `drive.readonly` will **not** satisfy it)
 3. Skip `gwcli configure` (service accounts do not use OAuth tokens). Instead, pass `--user user@example.com` to every gwcli command to select the mailbox:
    ```bash
    gwcli --user ops@example.com messages list --label SRE
@@ -364,6 +387,58 @@ gwcli attachments download <message-id> --index 0 --output myfile.pdf
 ```
 
 **Note:** Attachments are automatically numbered (index: 0, 1, 2...) when viewing messages. Use the index for reliable selection. Filename conflicts are handled automatically with ` (n)` suffix.
+
+### Drive Artifacts (doc links in emails)
+
+Some emails (notably Gemini/Google Meet "Notes by Gemini" chips) link a Google
+Doc/Drive file in the body rather than attaching a MIME part. The `artifacts`
+command group detects and fetches these. It mirrors `attachments` 1:1.
+
+```bash
+# List Drive artifacts linked from a message (Gmail only — no Drive scope)
+gwcli artifacts list <message-id>
+gwcli artifacts list <message-id> --json
+
+# Download/export an artifact (requires the full drive scope)
+gwcli artifacts download <message-id> --index 0 --output notes.md
+gwcli artifacts download <message-id> --filename "Notes*" --output-dir ~/Downloads
+```
+
+Native Google-apps files are **exported** (Docs → markdown, Sheets → CSV,
+Slides/unknown → PDF, Drawings → PNG); uploaded binary files are downloaded
+as-is. Selection flags match `attachments download` (`--index/-i`,
+`--filename/-f`, `--output-dir`, `--output`). Detected artifacts also appear in
+`gwcli messages read` frontmatter / `--json` under `drive_artifacts`.
+
+### Drive (direct file access)
+
+The `drive` command group works with any Drive file by **ID or Drive/Docs
+URL** — no email involved. All `drive` commands require the full `drive` scope.
+
+```bash
+# Metadata only (no download)
+gwcli drive get <file-id|url>
+gwcli drive get https://docs.google.com/document/d/<id>/edit --json
+
+# Export/download by ID or URL
+gwcli drive export <file-id|url> --output notes.md
+gwcli drive export <file-id|url> --output-dir ~/Downloads
+gwcli drive export <file-id|url> --export-format pdf   # override per-type default
+
+# List / search (paginated, across all drives)
+gwcli drive list --query "mimeType='application/pdf'" --limit 50
+gwcli drive list --folder <folder-id>
+gwcli drive search "quarterly plan"
+
+# Upload / replace content
+gwcli drive upload ./report.pdf --folder <folder-id> --name "Q3 Report.pdf"
+gwcli drive update <file-id|url> ./report.pdf --name "Q3 Report (final).pdf"
+```
+
+`--export-format` accepts a friendly alias (`pdf`/`md`/`docx`/`xlsx`/`csv`/
+`png`/...) or a raw MIME type. Google Docs/Sheets/Slides `Files.Export` has a
+~10 MB cap; gwcli detects this and suggests `--export-format pdf` (server-side
+PDF export is not subject to the same cap).
 
 ### Task Lists
 
@@ -591,6 +666,20 @@ gwcli provides comprehensive Google Calendar support:
 | Attendees | Add attendees when creating events |
 | All-day events | Create and manage all-day events |
 | Service accounts | Full Workspace delegation support |
+
+### Drive Features
+
+gwcli provides direct Google Drive file access plus email-linked doc detection:
+
+| Feature | Description |
+|---------|-------------|
+| Metadata | `drive get` — id, name, mimeType, size, modifiedTime, owners |
+| Export/download | By file ID or Drive/Docs URL; native docs exported, binaries downloaded |
+| Export format override | `--export-format` accepts an alias or raw MIME type |
+| List / search | Paginated `Files.List` across all drives, raw `q` or term search |
+| Upload / update | Create new files or replace existing file content |
+| Email artifacts | Detect & fetch Drive doc links in emails (`artifacts`, Gemini/Meet chips) |
+| Size-cap handling | Actionable PDF-fallback hint when Docs export exceeds the ~10 MB limit |
 
 ## Contributing
 
