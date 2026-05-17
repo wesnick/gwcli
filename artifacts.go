@@ -54,6 +54,85 @@ func wrapDriveErr(err error) error {
 	return err
 }
 
+// wrapDriveExportErr augments wrapDriveErr with the Google Docs ~10 MB
+// Files.Export size cap, which surfaces as a 403 with an
+// "exportSizeLimitExceeded" reason / "too large to be exported" message.
+func wrapDriveExportErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	var apiErr *googleapi.Error
+	isSizeCap := false
+	if errors.As(err, &apiErr) {
+		for _, e := range apiErr.Errors {
+			if e.Reason == "exportSizeLimitExceeded" {
+				isSizeCap = true
+			}
+		}
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "exportSizeLimitExceeded") ||
+		strings.Contains(msg, "too large to be exported") {
+		isSizeCap = true
+	}
+	if isSizeCap {
+		return fmt.Errorf("this file exceeds Google's ~10 MB export size "+
+			"limit for native Docs/Sheets/Slides. Try --export-format pdf "+
+			"(PDF export is generated server-side and not subject to the "+
+			"same cap), or open it in the browser and export manually "+
+			"(underlying: %w)", err)
+	}
+	return wrapDriveErr(err)
+}
+
+// driveExportFormats maps a friendly --export-format alias to the Drive export
+// MIME type and the file extension to write. A raw MIME type is also accepted
+// by callers (see resolveExportFormat).
+var driveExportFormats = map[string]struct{ mime, ext string }{
+	"pdf":      {"application/pdf", ".pdf"},
+	"md":       {"text/markdown", ".md"},
+	"markdown": {"text/markdown", ".md"},
+	"txt":      {"text/plain", ".txt"},
+	"text":     {"text/plain", ".txt"},
+	"html":     {"text/html", ".html"},
+	"csv":      {"text/csv", ".csv"},
+	"tsv":      {"text/tab-separated-values", ".tsv"},
+	"rtf":      {"application/rtf", ".rtf"},
+	"odt":      {"application/vnd.oasis.opendocument.text", ".odt"},
+	"ods":      {"application/vnd.oasis.opendocument.spreadsheet", ".ods"},
+	"odp":      {"application/vnd.oasis.opendocument.presentation", ".odp"},
+	"epub":     {"application/epub+zip", ".epub"},
+	"docx":     {"application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx"},
+	"xlsx":     {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"},
+	"pptx":     {"application/vnd.openxmlformats-officedocument.presentationml.presentation", ".pptx"},
+	"png":      {"image/png", ".png"},
+	"jpeg":     {"image/jpeg", ".jpg"},
+	"jpg":      {"image/jpeg", ".jpg"},
+	"svg":      {"image/svg+xml", ".svg"},
+	"json":     {"application/vnd.google-apps.script+json", ".json"},
+}
+
+// resolveExportFormat turns a user-supplied --export-format value into an
+// (exportMIME, ext) pair. It accepts a friendly alias (pdf, md, docx, ...) or
+// a raw MIME type; for an unknown raw MIME the extension falls back to .bin.
+func resolveExportFormat(format string) (exportMIME, ext string, ok bool) {
+	if format == "" {
+		return "", "", false
+	}
+	if spec, found := driveExportFormats[strings.ToLower(format)]; found {
+		return spec.mime, spec.ext, true
+	}
+	if strings.Contains(format, "/") {
+		for _, spec := range driveExportFormats {
+			if spec.mime == format {
+				return spec.mime, spec.ext, true
+			}
+		}
+		return format, ".bin", true
+	}
+	return "", "", false
+}
+
 // driveExportSpec returns the export MIME type and file extension to use for a
 // native Google-apps document. Defaults to PDF for unknown native types.
 func driveExportSpec(googleMime string) (exportMIME, ext string) {
@@ -85,10 +164,16 @@ func sanitizeFilename(name string) string {
 	return name
 }
 
-// fetchDriveArtifact resolves the artifact's Drive file, then exports (native
-// docs) or downloads (uploaded files) its content. It returns the bytes and a
-// suggested filename. Folders are rejected; auth failures are made actionable.
+// fetchDriveArtifact is the no-override variant (default per-type export).
+// Folders are rejected; auth failures are made actionable.
 func fetchDriveArtifact(ctx context.Context, conn *gwcli.CmdG, art driveArtifact) ([]byte, string, error) {
+	return fetchDriveArtifactFormat(ctx, conn, art, "")
+}
+
+// fetchDriveArtifactFormat resolves the artifact's Drive file, then exports
+// (native docs) or downloads (uploaded files) its content. exportFormat, when
+// non-empty, overrides the default per-type export MIME for native docs.
+func fetchDriveArtifactFormat(ctx context.Context, conn *gwcli.CmdG, art driveArtifact, exportFormat string) ([]byte, string, error) {
 	svc := conn.DriveService()
 	if svc == nil {
 		return nil, "", fmt.Errorf("Drive service is not available for this connection. %s", driveScopeHelp)
@@ -118,9 +203,16 @@ func fetchDriveArtifact(ctx context.Context, conn *gwcli.CmdG, art driveArtifact
 	var resp *http.Response
 	if strings.HasPrefix(meta.MimeType, "application/vnd.google-apps.") {
 		exportMIME, ext := driveExportSpec(meta.MimeType)
+		if exportFormat != "" {
+			m, e, ok := resolveExportFormat(exportFormat)
+			if !ok {
+				return nil, "", fmt.Errorf("unknown export format %q", exportFormat)
+			}
+			exportMIME, ext = m, e
+		}
 		resp, err = svc.Files.Export(art.ID, exportMIME).Context(ctx).Download()
 		if err != nil {
-			return nil, "", wrapDriveErr(err)
+			return nil, "", wrapDriveExportErr(err)
 		}
 		if !strings.HasSuffix(strings.ToLower(baseName), ext) {
 			baseName += ext
