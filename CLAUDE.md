@@ -39,7 +39,6 @@ just vet
 ```bash
 # Test specific package
 go test ./pkg/gwcli
-go test ./pkg/gwcli/gmailctl/...
 go test ./pkg/gpg
 
 # Run specific test
@@ -84,7 +83,8 @@ The `CmdG` struct is the central object passed to all command handlers.
 ### Command Handlers (root directory)
 
 - **`messages.go`** - All message operations (list, read, search, send, delete, mark read/unread)
-- **`labels.go`** - Label operations (list, create, delete, apply, remove)
+- **`labels.go`** - Label operations (list, apply, remove)
+- **`filters.go`** - Gmail filter operations (list, get, create, delete)
 - **`attachments.go`** - Attachment listing and downloading
 - **`batch.go`** - Batch operations (reading multiple message IDs from stdin)
 - **`output.go`** - Output formatting (JSON vs tabular text)
@@ -198,9 +198,6 @@ Required files:
 - `credentials.json` - OAuth client credentials from Google Cloud Console
 - `token.json` - Auto-generated OAuth access/refresh tokens
 
-Optional files:
-- `config.jsonnet` - gmailctl-compatible label definitions (Jsonnet format)
-
 ### Authentication Setup
 
 gwcli supports two authentication methods:
@@ -255,77 +252,44 @@ gwcli --config ~/.config/gwcli/user2 --user user2@example.com messages list
 ### Label Management
 
 **Label Discovery:**
-gwcli reads label definitions exclusively from:
-1. `~/.config/gwcli/config.jsonnet` (no API fallback for custom labels/rules)
-2. System labels (INBOX, TRASH, etc.) are automatically added
-
-If config.jsonnet is missing, gwcli auto-creates a minimal one (empty
-`labels`/`rules`) at the config path on first label load and prints a message
-pointing to `gwcli gmailctl download` for importing existing filters/labels.
-System labels work out of the box with the minimal config.
+gwcli loads labels directly from the Gmail API on first access (lazily, cached
+on the `CmdG` connection). All user labels are included, plus the Gmail
+built-in system labels (INBOX, TRASH, UNREAD, etc.). There is no config file
+involved — nothing is auto-created.
 
 **Label Operations:**
 - `gwcli labels list` - List all labels
 - `gwcli labels apply <label> --message <id>` - Apply label to message
 - `gwcli labels remove <label> --message <id>` - Remove label from message
 
-**Creating/Deleting Labels:**
-Use gmailctl for label management:
-```bash
-# Install gmailctl
-go install github.com/mbrt/gmailctl/cmd/gmailctl@latest
+Labels are created/deleted in the Gmail UI. gwcli does not manage label
+creation/deletion.
 
-# Edit label config
-gmailctl edit
+### Filter Management
 
-# See: https://github.com/mbrt/gmailctl for full documentation
-```
+gwcli manages Gmail filters imperatively via direct Gmail API CRUD
+(`users.settings.filters`). Implemented in `filters.go`.
 
-### gmailctl Integration
+- `gwcli filters list` - List all filters as a table (`--json` for full detail)
+- `gwcli filters get <filter-id>` - Show one filter's details
+- `gwcli filters create [flags]` - Create a filter
+- `gwcli filters delete <filter-id> --force` - Delete a filter (`--force` required; non-interactive)
 
-gwcli integrates gmailctl functionality natively for filter and label management. The gmailctl library code has been vendored into `pkg/gwcli/gmailctl/`, providing native access to filter parsing, diff computation, and Gmail API operations.
+`filters create` flags:
+- Criteria: `--from`, `--to`, `--subject`, `--query`, `--has-attachment`
+  (at least one required)
+- Actions: `--add-label`/`--remove-label` (repeatable, accept label name or ID),
+  plus shortcuts `--archive` (remove INBOX), `--mark-read` (remove UNREAD),
+  `--star`, `--important`, `--trash`, `--forward <addr>` (at least one required)
 
-**Commands (in gmailctl.go):**
-- `gwcli gmailctl download [-o file]` - Download filters from Gmail to config.jsonnet
-- `gwcli gmailctl apply [-y]` - Apply config.jsonnet to Gmail (with optional skip confirmation)
-- `gwcli gmailctl diff` - Show diff between local config and Gmail
+Label names in `--add-label`/`--remove-label` are resolved to IDs via the
+connection's label cache (same name/ID matching used by `labels.go`). Filter
+label IDs are resolved back to names for table/JSON display.
 
-**Implementation:**
-The gmailctl commands are implemented natively using vendored gmailctl library code in `pkg/gwcli/gmailctl/`. This provides:
-- Native integration with gwcli's authentication (OAuth and service accounts)
-- Better error handling and messaging
-- No external binary dependency
-
-The commands use `gwcli.InitializeAuth()` to obtain an authenticated Gmail service, then wrap it with `gmailctl.NewGmailAPI()` for filter/label operations.
-
-**For advanced gmailctl commands** (edit, test, debug), users can install and run gmailctl directly:
-```bash
-gmailctl --config ~/.config/gwcli <command>
-```
-
-Example `~/.config/gwcli/config.jsonnet`:
-
-```jsonnet
-{
-  version: 'v1alpha3',
-  labels: [
-    { name: 'work' },
-    { name: 'personal' },
-    { name: 'receipts' },
-  ],
-  rules: [
-    {
-      filter: { from: 'example.com' },
-      actions: { labels: ['work'] }
-    }
-  ]
-}
-```
-
-You can also symlink to gmailctl's config:
-```bash
-ln -s ~/.gmailctl/config.jsonnet ~/.config/gwcli/config.jsonnet
-```
+The Gmail API has no filter "update" — to change a filter, delete it and
+create a new one. The canonical list of an account's filters is meant to live
+in the editable skill doc (`claude-skill-gwcli/SKILL.md`) as a table that an
+agent can recreate via individual `filters create` calls.
 
 ## Google Tasks Commands
 
@@ -486,17 +450,16 @@ Note: Service accounts require domain-wide delegation with the `https://www.goog
 - **logrus** - Logging
 - **html-to-markdown/v2** (`github.com/JohannesKaufmann/html-to-markdown/v2`) - HTML to Markdown conversion
 - **yaml.v3** (`gopkg.in/yaml.v3`) - YAML marshaling for frontmatter
-- **go-jsonnet** (`github.com/google/go-jsonnet`) - Jsonnet parsing for gmailctl integration
 - **go-ical** (`github.com/emersion/go-ical`) - ICS/iCalendar parsing for calendar import
 
 ## Common Gotchas
 
-1. **Config path**: gwcli uses `~/.config/gwcli/` directory (gmailctl-compatible authentication)
+1. **Config path**: gwcli uses `~/.config/gwcli/` directory
 2. **Kong syntax**: Command matching uses exact strings like `"messages list"` not path-style routes
-3. **No interactive prompts**: All commands must work non-interactively (for scripting)
+3. **No interactive prompts**: All commands must work non-interactively (for scripting). Destructive commands require an explicit `--force` flag instead of prompting (e.g. `filters delete`).
 4. **Label IDs vs Names**: Always handle both - users may provide either
-5. **Label create/delete**: Use gmailctl for creating/deleting labels, not gwcli
-6. **Auto-created config.jsonnet**: On first label load, if `config.jsonnet` is absent, gwcli writes a minimal one (empty `labels`/`rules`) rather than erroring. It never overwrites an existing file. To seed it from the account's real filters/labels, run `gwcli gmailctl download`.
+5. **Label create/delete**: Done in the Gmail UI; gwcli does not create/delete labels
+6. **Labels load from the Gmail API**: Labels are fetched directly from the API (all user labels + system labels). There is no config file and nothing is auto-created.
 
 ## Error Handling Pattern
 

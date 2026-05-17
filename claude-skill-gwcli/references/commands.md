@@ -15,7 +15,7 @@ gwcli <resource> <action> [arguments] [flags]
 - **messages** - Email message operations
 - **labels** - Gmail label management
 - **attachments** - Attachment operations
-- **gmailctl** - Filter and label management via gmailctl integration
+- **filters** - Gmail filter management (list, get, create, delete)
 - **tasklists** - Google Task list operations
 - **tasks** - Google Task operations
 - **calendars** - Google Calendar listing
@@ -535,64 +535,67 @@ gwcli messages list --label "Invoices" --json | \
   done
 ```
 
-## gmailctl Commands
+## Filters Commands
 
-### gwcli gmailctl download
+Gmail filters are managed directly via the Gmail API (no config file).
 
-Download existing Gmail filters to config.jsonnet.
+### gwcli filters list
+
+List all Gmail filters.
 
 **Syntax:**
 ```bash
-gwcli gmailctl download [flags]
+gwcli filters list [flags]
 ```
 
 **Flags:**
-- `-o <file>` - Output file (default: ~/.config/gwcli/config.jsonnet)
+- `--json` - Output as JSON array (includes label IDs and resolved names)
 
-**Examples:**
-```bash
-# Download to default location
-gwcli gmailctl download
+**Output (table):** `ID, FROM, TO, SUBJECT, QUERY, ADD, REMOVE`
 
-# Download to specific file
-gwcli gmailctl download -o my-filters.jsonnet
-```
+### gwcli filters get
 
-### gwcli gmailctl apply
-
-Apply config.jsonnet to Gmail.
+Show a single filter's details.
 
 **Syntax:**
 ```bash
-gwcli gmailctl apply [flags]
+gwcli filters get <filter-id> [--json]
 ```
 
-**Flags:**
-- `-y` - Skip confirmation prompt
+### gwcli filters create
 
-**Examples:**
-```bash
-# Apply with confirmation
-gwcli gmailctl apply
-
-# Apply without confirmation
-gwcli gmailctl apply -y
-```
-
-### gwcli gmailctl diff
-
-Show differences between local config and Gmail.
+Create a new Gmail filter. Requires at least one match criterion and at
+least one action.
 
 **Syntax:**
 ```bash
-gwcli gmailctl diff
+gwcli filters create [flags]
 ```
+
+**Criteria flags:** `--from`, `--to`, `--subject`, `--query`, `--has-attachment`
+
+**Action flags:** `--add-label <name|id>` (repeatable),
+`--remove-label <name|id>` (repeatable), `--archive`, `--mark-read`,
+`--star`, `--important`, `--trash`, `--forward <addr>`
 
 **Examples:**
 ```bash
-# Show diff
-gwcli gmailctl diff
+gwcli filters create --from newsletter@example.com --add-label receipts --archive
+gwcli filters create --subject "[CI]" --add-label ci --mark-read
+gwcli filters create --query "from:boss@example.com" --important --star
 ```
+
+### gwcli filters delete
+
+Delete a Gmail filter. `--force` is required (commands are non-interactive).
+
+**Syntax:**
+```bash
+gwcli filters delete <filter-id> --force
+```
+
+**Note:** The Gmail API has no filter update. To change a filter, delete it
+and create a new one.
 
 ## Task Lists Commands
 
@@ -1107,7 +1110,6 @@ Default: `~/.config/gwcli/`
 Contents:
 - `credentials.json` - OAuth or service account credentials
 - `token.json` - OAuth access/refresh tokens (auto-generated)
-- `config.jsonnet` - Label and filter definitions (gmailctl format)
 
 Override with `--config` flag:
 ```bash

@@ -114,7 +114,7 @@ type CLI struct {
 			MessageID string `help:"Message ID" name:"message"`
 			Stdin     bool   `help:"Read IDs from stdin"`
 		} `cmd:"" help:"Remove label from messages"`
-	} `cmd:"" help:"Label operations (use gmailctl to create/delete labels)"`
+	} `cmd:"" help:"Label operations"`
 
 	Attachments struct {
 		List struct {
@@ -130,19 +130,20 @@ type CLI struct {
 		} `cmd:"" help:"Download attachments"`
 	} `cmd:"" help:"Attachment operations"`
 
-	Gmailctl struct {
-		Download struct {
-			Output string `short:"o" help:"Output file (default: config.jsonnet in config directory)"`
-			Yes    bool   `short:"y" help:"Skip overwrite confirmation prompt"`
-		} `cmd:"" help:"Download filters from Gmail to config file"`
+	Filters struct {
+		List struct{} `cmd:"" help:"List all Gmail filters"`
 
-		Apply struct {
-			Yes          bool `short:"y" help:"Skip confirmation prompt"`
-			RemoveLabels bool `help:"Allow removing labels not in config" name:"remove-labels"`
-		} `cmd:"" help:"Apply config.jsonnet to Gmail filters"`
+		Get struct {
+			FilterID string `arg:"" name:"filter-id" help:"ID of the filter to show"`
+		} `cmd:"" help:"Show a single filter's details"`
 
-		Diff struct{} `cmd:"" help:"Show diff between local config and Gmail"`
-	} `cmd:"" help:"gmailctl filter management"`
+		Create filtersCreateCmd `cmd:"" help:"Create a new filter"`
+
+		Delete struct {
+			FilterID string `arg:"" name:"filter-id" help:"ID of the filter to delete"`
+			Force    bool   `name:"force" short:"f" help:"Skip confirmation"`
+		} `cmd:"" help:"Delete a filter"`
+	} `cmd:"" help:"Manage Gmail filters"`
 
 	Tasklists struct {
 		List struct{} `cmd:"" help:"List all task lists"`
@@ -482,23 +483,50 @@ func main() {
 			os.Exit(2)
 		}
 
-	case "gmailctl download":
+	case "filters list":
 		cmdCtx := context.Background()
-		if err := runGmailctlDownload(cmdCtx, cli.Config, cli.User, cli.Gmailctl.Download.Output, cli.Gmailctl.Download.Yes, out); err != nil {
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runFiltersList(cmdCtx, conn, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
 
-	case "gmailctl apply":
+	case "filters get <filter-id>":
 		cmdCtx := context.Background()
-		if err := runGmailctlApply(cmdCtx, cli.Config, cli.User, cli.Gmailctl.Apply.Yes, cli.Gmailctl.Apply.RemoveLabels, out); err != nil {
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runFiltersGet(cmdCtx, conn, cli.Filters.Get.FilterID, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
 
-	case "gmailctl diff":
+	case "filters create":
 		cmdCtx := context.Background()
-		if err := runGmailctlDiff(cmdCtx, cli.Config, cli.User, out); err != nil {
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runFiltersCreate(cmdCtx, conn, cli.Filters.Create, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "filters delete <filter-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runFiltersDelete(cmdCtx, conn, cli.Filters.Delete.FilterID, cli.Filters.Delete.Force, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}

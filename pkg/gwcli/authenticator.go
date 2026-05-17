@@ -2,7 +2,7 @@
 // Licensed under the MIT License
 // Vendored from github.com/mbrt/gmailctl
 
-package gmailctl
+package gwcli
 
 import (
 	"context"

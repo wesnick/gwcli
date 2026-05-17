@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/wesnick/gwcli/pkg/gwcli/gmailctl"
 	"google.golang.org/api/gmail/v1"
 )
 
@@ -16,7 +15,6 @@ const (
 
 	credentialsFile = "credentials.json"
 	tokenFile       = "token.json"
-	configFile      = "config.jsonnet"
 )
 
 // ConfigPaths holds paths to all config files
@@ -24,7 +22,6 @@ type ConfigPaths struct {
 	Dir         string
 	Credentials string
 	Token       string
-	Config      string
 }
 
 // GetConfigPaths returns the config paths, expanding ~ if needed
@@ -46,7 +43,6 @@ func GetConfigPaths(configDir string) (*ConfigPaths, error) {
 		Dir:         configDir,
 		Credentials: filepath.Join(configDir, credentialsFile),
 		Token:       filepath.Join(configDir, tokenFile),
-		Config:      filepath.Join(configDir, configFile),
 	}, nil
 }
 
@@ -87,7 +83,7 @@ Scopes needed:
 	defer credFile.Close()
 
 	// Detect if this is a service account
-	isServiceAcct, err := gmailctl.IsServiceAccount(credFile)
+	isServiceAcct, err := IsServiceAccount(credFile)
 	if err != nil {
 		return nil, fmt.Errorf("detecting credential type: %w", err)
 	}
@@ -103,7 +99,7 @@ Scopes needed:
 			return nil, fmt.Errorf("service account authentication requires --user flag to specify which user to impersonate")
 		}
 
-		auth, err := gmailctl.NewServiceAccountAuthenticator(credFile, userEmail)
+		auth, err := NewServiceAccountAuthenticator(credFile, userEmail)
 		if err != nil {
 			return nil, fmt.Errorf("creating service account authenticator: %w", err)
 		}
@@ -112,7 +108,7 @@ Scopes needed:
 	}
 
 	// Use OAuth authentication
-	auth, err := gmailctl.NewAuthenticator(credFile)
+	auth, err := NewAuthenticator(credFile)
 	if err != nil {
 		return nil, fmt.Errorf("creating authenticator: %w", err)
 	}
@@ -143,7 +139,7 @@ func ConfigureAuth(ctx context.Context, paths *ConfigPaths, port int) error {
 	defer credFile.Close()
 
 	// Create authenticator
-	auth, err := gmailctl.NewAuthenticator(credFile)
+	auth, err := NewAuthenticator(credFile)
 	if err != nil {
 		return fmt.Errorf("creating authenticator: %w", err)
 	}

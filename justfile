@@ -53,15 +53,15 @@ version:
 configure:
     go run . configure
 
-# Gmailctl helpers
-gmailctl-download *ARGS:
-    go run . gmailctl download {{ARGS}}
+# Filter helpers
+filters-list *ARGS:
+    go run . filters list {{ARGS}}
 
-gmailctl-apply *ARGS:
-    go run . gmailctl apply {{ARGS}}
+filters-create *ARGS:
+    go run . filters create {{ARGS}}
 
-gmailctl-diff *ARGS:
-    go run . gmailctl diff {{ARGS}}
+filters-delete *ARGS:
+    go run . filters delete {{ARGS}}
 
 # Format Go code
 fmt:
