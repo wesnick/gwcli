@@ -14,9 +14,9 @@ This skill provides comprehensive guidance for using gwcli, a command-line clien
 gwcli provides these main resource types:
 
 1. **Messages** - Read, send, search, delete, mark read/unread, and move emails
-2. **Labels** - List labels, apply/remove labels to messages (creation via gmailctl)
+2. **Labels** - List labels, apply/remove labels to messages
 3. **Attachments** - List and download email attachments
-4. **Gmailctl** - Manage filters and labels via gmailctl integration (download, apply, diff)
+4. **Filters** - List, get, create, and delete Gmail filters directly
 5. **Task Lists** - List, create, and delete Google Task lists
 6. **Tasks** - List, create, read, complete, and delete tasks
 7. **Calendars** - List accessible Google Calendars
@@ -49,9 +49,9 @@ This opens a browser for Google OAuth and saves credentials to `~/.config/gwcli/
 **Required configuration files:**
 - `~/.config/gwcli/credentials.json` - OAuth credentials from Google Console
 - `~/.config/gwcli/token.json` - Auto-generated access token
-- `~/.config/gwcli/config.jsonnet` - **Required** label definitions (gmailctl format)
 
-**Important:** gwcli requires `config.jsonnet` to load label definitions. If missing, commands will fail with an error. See the gmailctl Integration section below for setup.
+Labels are loaded directly from the Gmail API — there is no config file to
+set up.
 
 ### Basic Command Pattern
 
@@ -70,89 +70,49 @@ gwcli tasks list <tasklist-id>
 gwcli events list
 ```
 
-### gmailctl Integration
+### Gmail Filters
 
-gwcli integrates with [gmailctl](https://github.com/mbrt/gmailctl) for label and filter management. Labels are defined in `~/.config/gwcli/config.jsonnet` using gmailctl's Jsonnet format.
-
-**Setup config.jsonnet:**
-
-1. Install gmailctl:
-```bash
-go install github.com/mbrt/gmailctl/cmd/gmailctl@latest
-```
-
-2. Download existing Gmail filters (creates config.jsonnet):
-```bash
-gwcli gmailctl download
-```
-
-3. Or create manually:
-```bash
-cat > ~/.config/gwcli/config.jsonnet << 'EOF'
-{
-  version: "v1alpha3",
-  labels: [
-    { name: "work" },
-    { name: "personal" },
-    { name: "receipts" },
-  ],
-  rules: []
-}
-EOF
-```
-
-**gwcli gmailctl wrapper commands:**
-
-These automatically use `~/.config/gwcli` directory (no need for `--config` flag):
+gwcli manages Gmail filters directly via the API — no config file, no
+external tool. Filters are plain CRUD:
 
 ```bash
-# Download existing filters from Gmail
-gwcli gmailctl download
+# List all filters (table). Add --json for full detail.
+gwcli filters list
 
-# Preview changes before applying
-gwcli gmailctl diff
+# Show one filter
+gwcli filters get <filter-id>
 
-# Apply config.jsonnet to Gmail (creates filters)
-gwcli gmailctl apply
+# Create a filter: at least one match criterion + one action
+gwcli filters create --from newsletter@example.com --add-label receipts --archive
+gwcli filters create --subject "[CI]" --add-label ci --mark-read
+gwcli filters create --query "from:boss@example.com" --important --star
 
-# Apply without confirmation
-gwcli gmailctl apply -y
+# Delete a filter (--force required; commands are non-interactive)
+gwcli filters delete <filter-id> --force
 ```
 
-**Manual gmailctl usage:**
+**`filters create` flags**
 
-For advanced commands (init, edit, test, debug), use gmailctl directly:
+- Match criteria (≥1 required): `--from`, `--to`, `--subject`, `--query`,
+  `--has-attachment`
+- Actions (≥1 required): `--add-label NAME|ID`, `--remove-label NAME|ID`
+  (both repeatable), `--archive` (skip inbox), `--mark-read`, `--star`,
+  `--important`, `--trash`, `--forward addr@example.com`
 
-```bash
-# Edit config interactively
-gmailctl --config ~/.config/gwcli edit
+`--add-label`/`--remove-label` accept either a label name or ID (resolved
+via `gwcli labels list`). The Gmail API has no filter *update* — to change a
+filter, delete it and create a new one.
 
-# Run tests
-gmailctl --config ~/.config/gwcli test
+**Canonical filter inventory (edit this list as filters change)**
 
-# Show annotated config
-gmailctl --config ~/.config/gwcli debug
-```
+Keep the account's intended filters here as a table. To rebuild the account,
+run each row's `filters create` command; to reconcile, `gwcli filters list`
+and add/delete to match.
 
-**Typical workflow:**
+| Criteria | Action | create command |
+|----------|--------|----------------|
+| _example_: from newsletter@example.com | label `receipts`, archive | `gwcli filters create --from newsletter@example.com --add-label receipts --archive` |
 
-```bash
-# 1. Download current Gmail setup
-gwcli gmailctl download
-
-# 2. Edit config.jsonnet to add labels/rules
-vim ~/.config/gwcli/config.jsonnet
-
-# 3. Preview changes
-gwcli gmailctl diff
-
-# 4. Apply to Gmail
-gwcli gmailctl apply
-
-# 5. Use labels in gwcli
-gwcli labels list
-gwcli messages list --label work
-```
 
 ## Common Workflows
 
@@ -296,7 +256,7 @@ gwcli messages list --unread-only --json | \
 
 **List labels:**
 ```bash
-# All labels (loaded from config.jsonnet + system labels)
+# All labels (loaded directly from the Gmail API + system labels)
 gwcli labels list
 
 # User-created only
@@ -311,36 +271,9 @@ gwcli labels list --json
 
 **Create/delete labels:**
 
-Labels are managed via `config.jsonnet`, not directly by gwcli. To add labels:
-
-1. Edit config.jsonnet:
-```bash
-vim ~/.config/gwcli/config.jsonnet
-```
-
-2. Add labels to the labels array:
-```jsonnet
-{
-  version: "v1alpha3",
-  labels: [
-    { name: "work" },
-    { name: "personal" },
-    { name: "work/projects" },     // Nested label
-    { name: "urgent" },
-  ],
-  rules: []
-}
-```
-
-3. Apply to Gmail:
-```bash
-gwcli gmailctl apply
-```
-
-Or use gmailctl's interactive editor:
-```bash
-gmailctl --config ~/.config/gwcli edit
-```
+gwcli does not create or delete labels. Create or delete labels in the Gmail
+web UI (Settings → Labels); gwcli reads them from the Gmail API on the next
+run.
 
 **Apply/remove labels to messages:**
 ```bash
@@ -528,7 +461,7 @@ Available on all commands:
 - `--config <path>` - Config directory path (default: ~/.config/gwcli)
 - `--user <email>` - User email for service account impersonation
 - `--json` - Output in JSON format for programmatic processing
-- `--verbose` - Enable verbose logging (shows which config.jsonnet is loaded)
+- `--verbose` - Enable verbose logging
 - `--no-color` - Disable colored output
 
 ## Important Behaviors
@@ -691,7 +624,7 @@ echo "Downloaded to: $OUTPUT_DIR"
 
 Apply labels based on sender domain:
 
-**Note:** Labels must be defined in `~/.config/gwcli/config.jsonnet` first.
+**Note:** The label must already exist in Gmail (create it in the Gmail UI if needed).
 
 ```bash
 DOMAINS=("company.com" "partner.org" "client.net")
@@ -826,15 +759,15 @@ Load with: `Read references/commands.md`
 When helping users with gwcli:
 
 1. **Always check authentication first** - Ensure `gwcli configure` has been run
-2. **Ensure config.jsonnet exists** - gwcli requires `~/.config/gwcli/config.jsonnet` for label definitions. Use `gwcli gmailctl download` to create it if missing
+2. **Labels come from the Gmail API** - No config file is needed; labels are fetched live
 3. **Use JSON for automation** - Add `--json` flag when building pipelines
 4. **Include safety flags** - Remind users about `--force` for destructive operations
 5. **Leverage stdin for batches** - Use `--stdin` pattern for processing multiple messages
 6. **Provide complete commands** - Include all necessary flags in examples
 7. **Test incrementally** - Suggest testing commands on small datasets first
 8. **Handle errors gracefully** - Include error checking in automation scripts
-9. **Use verbose mode for debugging** - Add `--verbose` when troubleshooting (shows which config.jsonnet is loaded)
-10. **Manage labels via gmailctl** - Labels are created/deleted in config.jsonnet, not via gwcli commands
+9. **Use verbose mode for debugging** - Add `--verbose` when troubleshooting
+10. **Manage filters with `gwcli filters`** - Create/delete Gmail filters directly; keep the canonical list in this skill's filter inventory table
 
 ## Common User Requests
 

@@ -115,8 +115,7 @@ func runLabelsApply(ctx context.Context, conn *gwcli.CmdG, labelID, messageID st
 		for _, l := range labels {
 			out.writeVerbose("  - %s (ID: %s)", l.Label, l.ID)
 		}
-		fmt.Fprintf(os.Stderr, "Warning: label '%s' not found in config\n", labelID)
-		fmt.Fprintf(os.Stderr, "If you need to create labels, use gmailctl\n")
+		fmt.Fprintf(os.Stderr, "Warning: label '%s' not found\n", labelID)
 	}
 
 	// Batch operation
@@ -180,8 +179,7 @@ func runLabelsRemove(ctx context.Context, conn *gwcli.CmdG, labelID, messageID s
 		for _, l := range labels {
 			out.writeVerbose("  - %s (ID: %s)", l.Label, l.ID)
 		}
-		fmt.Fprintf(os.Stderr, "Warning: label '%s' not found in config\n", labelID)
-		fmt.Fprintf(os.Stderr, "If you need to create labels, use gmailctl\n")
+		fmt.Fprintf(os.Stderr, "Warning: label '%s' not found\n", labelID)
 	}
 
 	// Batch operation

@@ -9,14 +9,13 @@ gwcli combines functionality from three open-source projects:
 | Project | Author | What gwcli uses |
 |---------|--------|-----------------|
 | [cmdg](https://github.com/ThomasHabets/cmdg) | Thomas Habets | Gmail API client, message handling, and core architecture (TUI removed) |
-| [gmailctl](https://github.com/mbrt/gmailctl) | Michele Bertasi | Authentication system, label/filter management, Jsonnet config parsing |
+| [gmailctl](https://github.com/mbrt/gmailctl) | Michele Bertasi | OAuth + service-account authentication helpers |
 | [gtasks](https://github.com/BRO3886/gtasks) | Siddhartha Varma | Google Tasks API integration patterns |
 
 **Key characteristics:**
 - **Pure CLI tool** - Designed for shell scripting and piping to other tools (no TUI)
 - **Non-interactive** - All commands work without user interaction
 - **Unified authentication** - Single credential set for Gmail, Tasks, and Calendar APIs
-- **gmailctl compatible** - Uses same Jsonnet config format for labels and filters
 
 ## License
 
@@ -64,10 +63,11 @@ This table shows which scopes are required for each command group:
 | **Attachments** |
 | `attachments list` | Required | - | - | - | - |
 | `attachments download` | Required | - | - | - | - |
-| **gmailctl** |
-| `gmailctl download` | - | Required | Required | - | - |
-| `gmailctl apply` | - | Required | Required | - | - |
-| `gmailctl diff` | - | Required | Required | - | - |
+| **Filters** |
+| `filters list` | - | - | Required | - | - |
+| `filters get` | - | - | Required | - | - |
+| `filters create` | - | - | Required | - | - |
+| `filters delete` | - | - | Required | - | - |
 | **Task Lists** |
 | `tasklists list` | - | - | - | Required | - |
 | `tasklists create` | - | - | - | Required | - |
@@ -105,7 +105,7 @@ gwcli provides command-line access to Gmail, Google Tasks, and Google Calendar u
 - **Gmail**: Label management and batch operations via stdin
 - **Tasks**: Managing task lists and tasks (create, read, complete, delete)
 - **Calendar**: Managing calendars and events (list, create, update, delete, search, conflicts, import)
-- **gmailctl**: Native integration for filter/label management
+- **Filters**: Direct Gmail filter CRUD (list, get, create, delete)
 - **Output**: JSON output for easy parsing and automation
 
 ## Why gwcli?
@@ -173,16 +173,13 @@ sudo cp dist/gwcli /usr/local/bin
 ## Setup Protocol
 
 1. **Build or install gwcli** – `just build` writes `dist/gwcli`, or `go install github.com/wesnick/gwcli@latest` drops the binary in your `GOBIN`.
-2. **Prepare the config directory** – `mkdir -p ~/.config/gwcli` and copy in `credentials.json`. If you already have gmailctl state, symlink or copy `config.jsonnet` into this path.
+2. **Prepare the config directory** – `mkdir -p ~/.config/gwcli` and copy in `credentials.json`.
 3. **Authorize** – For personal Gmail, run `gwcli configure` to generate `token.json`. For Workspace service accounts, skip this and use `--user you@example.com` on every invocation.
-4. **Sync filter config** – `gwcli gmailctl download` pulls the current Gmail filters to `config.jsonnet`. Edit as needed, then run `gwcli gmailctl diff` / `gwcli gmailctl apply` to preview and push updates.
-5. **Use gwcli commands** – e.g., `gwcli messages list`, `gwcli tasklists list`, `gwcli --user admin@example.com labels list`.
-
-**Note:** gmailctl installation is optional. gwcli has native gmailctl integration for download/apply/diff commands. Install gmailctl separately only if you need its advanced commands like `edit`, `test`, or `debug`.
+4. **Use gwcli commands** – e.g., `gwcli messages list`, `gwcli filters list`, `gwcli tasklists list`, `gwcli --user admin@example.com labels list`.
 
 ## Configuring
 
-gwcli reads all authentication material and gmailctl rules from `~/.config/gwcli/`. Pick the authentication path that matches your account type and place the files called out below.
+gwcli reads all authentication material from `~/.config/gwcli/`. Pick the authentication path that matches your account type and place the files called out below.
 
 ### OAuth (Desktop flow)
 
@@ -200,7 +197,7 @@ Once both files exist you can run every command with your personal Gmail account
 
 ### Service Accounts (Google Workspace)
 
-gwcli can reuse gmailctl's service-account authenticator to impersonate Workspace users:
+gwcli supports a service-account authenticator to impersonate Workspace users:
 
 1. In the Cloud Console, enable **Gmail API**, **Google Tasks API**, and **Google Calendar API**, create a Service Account, enable **Domain-wide Delegation**, and download the JSON key to `~/.config/gwcli/credentials.json`.
 2. In the Admin Console (`Security → API controls → Domain-wide delegation`) authorize the client ID from the JSON file with all five scopes:
@@ -215,132 +212,54 @@ gwcli can reuse gmailctl's service-account authenticator to impersonate Workspac
    gwcli --user ops@example.com tasklists list
    gwcli --user ops@example.com events list
    ```
-4. Rotate the service-account key the same way you would for gmailctl; gwcli simply streams the file on every invocation.
+4. Rotate the service-account key as needed; gwcli simply streams the file on every invocation.
 
 ### Configuration Files
 
 gwcli stores configuration in `~/.config/gwcli/`:
 - `credentials.json` – OAuth or service-account credentials (you provide this)
 - `token.json` – OAuth access/refresh tokens (auto-generated during `gwcli configure`)
-- `config.jsonnet` – gmailctl label/filter definitions that gwcli consumes at startup
 
-**Note:** gwcli embeds gmailctl’s config reader, so the same Jsonnet file powers both tools.
+There is no label/filter config file: labels are read live from the Gmail API
+and filters are managed with `gwcli filters`.
 
-## gmailctl Integration
+## Filter Management
 
-gwcli vendors gmailctl's config reader and authentication helpers so both tools operate on the same Jsonnet file and credential set. The CLI refuses to start label-aware commands unless `~/.config/gwcli/config.jsonnet` exists, ensuring every run honors the labels and filters checked into gmailctl.
-
-### Configuration File
-
-gwcli reads label definitions from `~/.config/gwcli/config.jsonnet` (Jsonnet format, same as gmailctl). This file defines:
-- **Labels**: Custom labels you've created
-- **Rules**: Filter rules for automatic email processing (applied via gmailctl)
-
-Example `config.jsonnet`:
-
-```jsonnet
-{
-  version: "v1alpha3",
-  labels: [
-    { name: "work" },
-    { name: "personal" },
-    { name: "receipts" },
-  ],
-  rules: [
-    {
-      filter: { from: "example.com" },
-      actions: { labels: ["work"] }
-    }
-  ]
-}
-```
-
-### Using gmailctl Commands
-
-gwcli provides built-in wrappers for the most common gmailctl operations. These commands automatically use gwcli's config directory (`~/.config/gwcli`), so you don't need to specify `--config` flags.
-
-If you prefer task shortcuts, the `just gmailctl-download`, `just gmailctl-diff`, and `just gmailctl-apply` recipes simply call the corresponding gwcli subcommands.
-
-#### Download existing filters from Gmail
+gwcli manages Gmail filters directly via the Gmail API — no config file and
+no external tool. Filters are plain CRUD.
 
 ```bash
-# Download current Gmail filters to config.jsonnet
-gwcli gmailctl download
+# List all filters as a table (add --json for full detail)
+gwcli filters list
 
-# Download to a specific file
-gwcli gmailctl download -o my-filters.jsonnet
+# Show a single filter
+gwcli filters get <filter-id>
+
+# Create a filter (>=1 match criterion + >=1 action)
+gwcli filters create --from newsletter@example.com --add-label receipts --archive
+gwcli filters create --subject "[CI]" --add-label ci --mark-read
+gwcli filters create --query "from:boss@example.com" --important --star
+
+# Delete a filter (--force required; commands are non-interactive)
+gwcli filters delete <filter-id> --force
 ```
 
-#### Apply local config to Gmail
+**`filters create` flags**
 
-```bash
-# Apply config.jsonnet to Gmail (with confirmation prompt)
-gwcli gmailctl apply
+- Match criteria (>=1 required): `--from`, `--to`, `--subject`, `--query`,
+  `--has-attachment`
+- Actions (>=1 required): `--add-label NAME|ID`, `--remove-label NAME|ID`
+  (both repeatable), `--archive` (skip inbox), `--mark-read`, `--star`,
+  `--important`, `--trash`, `--forward addr@example.com`
 
-# Apply without confirmation
-gwcli gmailctl apply -y
-```
+`--add-label`/`--remove-label` accept a label name or ID (resolved via
+`gwcli labels list`). The Gmail API has no filter *update* — to change a
+filter, delete it and create a new one. Keep the canonical inventory of an
+account's filters in the gwcli skill doc (`claude-skill-gwcli/SKILL.md`) so
+an agent can recreate them with `filters create`.
 
-#### Show differences
-
-```bash
-# Show diff between local config and Gmail settings
-gwcli gmailctl diff
-```
-
-### Manual gmailctl Usage
-
-If you prefer to use gmailctl directly (or need access to advanced commands like `edit`, `init`, `test`), run gmailctl with the `--config` flag pointing to gwcli's config directory:
-
-```bash
-# Download filters
-gmailctl --config ~/.config/gwcli download
-
-# Edit config interactively
-gmailctl --config ~/.config/gwcli edit
-
-# Run config tests
-gmailctl --config ~/.config/gwcli test
-
-# Show annotated config
-gmailctl --config ~/.config/gwcli debug
-```
-
-### Installing gmailctl (Optional)
-
-gwcli has native gmailctl integration for the most common operations (download, apply, diff). However, if you need advanced features like interactive editing or config testing, install the gmailctl binary:
-
-```bash
-go install github.com/mbrt/gmailctl/cmd/gmailctl@latest
-```
-
-After installation, verify it's available:
-
-```bash
-gmailctl version
-```
-
-### Workflow Example
-
-Typical workflow for managing labels and filters:
-
-```bash
-# 1. Download your current Gmail filters
-gwcli gmailctl download
-
-# 2. Edit config.jsonnet in your favorite editor
-vim ~/.config/gwcli/config.jsonnet
-
-# 3. Preview changes before applying
-gwcli gmailctl diff
-
-# 4. Apply the changes to Gmail
-gwcli gmailctl apply
-
-# 5. Use the labels in gwcli
-gwcli messages list --label work
-gwcli labels list
-```
+Labels themselves are created/deleted in the Gmail web UI; gwcli reads them
+live from the Gmail API.
 
 ## Usage Examples
 
@@ -415,7 +334,7 @@ echo "msg1\nmsg2\nmsg3" | gwcli labels apply "Archive" --stdin
 gwcli labels remove "Archive" --message <message-id>
 ```
 
-**Note:** Label and filter definitions come from `config.jsonnet`. Create, rename, or delete labels through gmailctl (`just gmailctl-download` → edit → `just gmailctl-apply`) so gwcli stays in sync.
+**Note:** Labels are read live from the Gmail API (create/rename/delete them in the Gmail web UI). Manage filters with `gwcli filters`.
 
 ### Attachments
 
@@ -640,11 +559,11 @@ gwcli combines and extends functionality from three projects:
 
 | Feature | gmailctl | gwcli |
 |---------|----------|-------|
-| Filter management | Primary focus | Integrated (download/apply/diff) |
+| Filter management | Declarative (Jsonnet config) | Imperative CRUD (`filters` subcommand) |
 | Message operations | No | Yes (list, read, search, send) |
-| Label operations | Create/delete via config | Apply/remove + config sync |
-| Config format | Jsonnet | Same (compatible) |
-| Authentication | OAuth + Service Account | Same (shared code) |
+| Label operations | Create/delete via config | Apply/remove (labels read from API) |
+| Config format | Jsonnet | None (no filter/label config file) |
+| Authentication | OAuth + Service Account | Same (auth helpers vendored from gmailctl) |
 
 ### vs gtasks
 
