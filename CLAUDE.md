@@ -89,6 +89,7 @@ The `CmdG` struct is the central object passed to all command handlers.
 - **`batch.go`** - Batch operations (reading multiple message IDs from stdin)
 - **`output.go`** - Output formatting (JSON vs tabular text)
 - **`format.go`** - Email formatting (markdown, HTML, plain text with YAML frontmatter)
+- **`drive_artifacts.go`** - Detect Google Drive docs/files linked from email bodies (Gemini/Meet artifact chips)
 - **`tasklists.go`** - Task list operations (list, create, delete)
 - **`tasks.go`** - Task operations (list, read, create, complete, delete)
 
@@ -175,6 +176,21 @@ The `gwcli messages read` command supports three output formats:
 - `message_id`: For follow-up operations
 - `thread_id`: For thread operations
 - `attachments[].attachment_id`: For downloading attachments
+- `drive_artifacts[]`: Google Drive docs/files linked from the body (see below)
+
+**Drive artifacts** (`drive_artifacts` in frontmatter, `driveArtifacts` in
+`--json`): Some emails (notably Gemini/Google Meet "Notes by Gemini" chips)
+reference a Google Doc/Drive file via an in-body link rather than a MIME
+attachment. These are detected and surfaced — but **not** downloaded:
+fetching their content would require a Drive OAuth scope (`drive.readonly`)
+that gwcli does not currently request, and Google-native docs need
+`drive.Files.Export`, not the Gmail attachment API. Each artifact exposes the
+canonical `id` (the stable key — every URL is templated from it), `type`
+(`document`/`spreadsheet`/`presentation`/`form`/`folder`/`drive-file`),
+`title`, and a cleaned canonical `url`. Detection (`drive_artifacts.go`) only
+keeps a link if it carries Google's `artifact-chip`/`link-button` class or its
+ID appears in the decoded `X-Meet-Artifact-Email-Metadata` header, so ordinary
+emails with incidental Drive links stay noise-free. Links are deduped by ID.
 
 **JSON output** (`--json`) includes all body formats: `body`, `bodyHtml`, `bodyMarkdown`
 

@@ -183,16 +183,17 @@ func runMessagesList(ctx context.Context, conn *gwcli.CmdG, label string, limit 
 
 // messageReadOutput is JSON output format for reading a message
 type messageReadOutput struct {
-	ID           string            `json:"id"`
-	ThreadID     string            `json:"threadId"`
-	LabelIDs     []string          `json:"labelIds"`
-	Snippet      string            `json:"snippet"`
-	Headers      map[string]string `json:"headers"`
-	Body         string            `json:"body,omitempty"`
-	BodyHTML     string            `json:"bodyHtml,omitempty"`
-	BodyMarkdown string            `json:"bodyMarkdown,omitempty"`
-	Attachments  []attachmentInfo  `json:"attachments,omitempty"`
-	Raw          string            `json:"raw,omitempty"`
+	ID             string            `json:"id"`
+	ThreadID       string            `json:"threadId"`
+	LabelIDs       []string          `json:"labelIds"`
+	Snippet        string            `json:"snippet"`
+	Headers        map[string]string `json:"headers"`
+	Body           string            `json:"body,omitempty"`
+	BodyHTML       string            `json:"bodyHtml,omitempty"`
+	BodyMarkdown   string            `json:"bodyMarkdown,omitempty"`
+	Attachments    []attachmentInfo  `json:"attachments,omitempty"`
+	DriveArtifacts []driveArtifact   `json:"driveArtifacts,omitempty"`
+	Raw            string            `json:"raw,omitempty"`
 }
 
 type attachmentInfo struct {
@@ -437,6 +438,12 @@ func runMessagesRead(ctx context.Context, conn *gwcli.CmdG, messageID string, ra
 			if err == nil && len(attachmentsInfo) > 0 {
 				output.Attachments = attachmentsInfo
 			}
+
+			// Drive artifacts (linked Google Docs/Drive files, not MIME parts)
+			artifacts, err := extractDriveArtifacts(ctx, conn, messageID)
+			if err == nil && len(artifacts) > 0 {
+				output.DriveArtifacts = artifacts
+			}
 		}
 
 		return out.writeJSON(output)
@@ -464,6 +471,9 @@ func runMessagesRead(ctx context.Context, conn *gwcli.CmdG, messageID string, ra
 			Subject:   subject,
 			Date:      date,
 			Labels:    msg.Response.LabelIds,
+		}
+		if artifacts, err := extractDriveArtifacts(ctx, conn, messageID); err == nil {
+			frontmatter.DriveArtifacts = artifacts
 		}
 
 		// Output just frontmatter
@@ -557,6 +567,9 @@ func runMessagesRead(ctx context.Context, conn *gwcli.CmdG, messageID string, ra
 		Date:      date,
 		Labels:    msg.Response.LabelIds,
 		Note:      fallbackNote,
+	}
+	if artifacts, err := extractDriveArtifacts(ctx, conn, messageID); err == nil {
+		frontmatter.DriveArtifacts = artifacts
 	}
 
 	// Get attachments
