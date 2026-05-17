@@ -144,6 +144,42 @@ type CLI struct {
 		} `cmd:"" help:"Download/export Google Drive artifacts linked from a message"`
 	} `cmd:"" help:"Google Drive artifact operations (Gemini/Meet doc links)"`
 
+	Drive struct {
+		Get struct {
+			Ref string `arg:"" required:"" name:"file" help:"Drive file ID or Drive/Docs URL"`
+		} `cmd:"" help:"Show Google Drive file metadata"`
+
+		Export struct {
+			Ref          string `arg:"" required:"" name:"file" help:"Drive file ID or Drive/Docs URL"`
+			ExportFormat string `name:"export-format" help:"Override export format for native docs (alias e.g. pdf,md,docx,csv,xlsx or a raw MIME type)"`
+			OutputDir    string `help:"Output directory" type:"path" default:"~/Downloads"`
+			Output       string `help:"Output filename"`
+		} `cmd:"" help:"Export/download a Google Drive file by ID or URL"`
+
+		List struct {
+			Query  string `name:"query" short:"q" help:"Raw Drive query expression (q parameter)"`
+			Folder string `name:"folder" help:"Restrict to direct children of this folder ID"`
+			Limit  int    `name:"limit" default:"100" help:"Max results (0 = no limit)"`
+		} `cmd:"" help:"List Drive files"`
+
+		Search struct {
+			Term  string `arg:"" required:"" help:"Search term (matched against name and full text)"`
+			Limit int    `name:"limit" default:"100" help:"Max results (0 = no limit)"`
+		} `cmd:"" help:"Search Drive files by name/content"`
+
+		Upload struct {
+			Path   string `arg:"" required:"" name:"path" type:"existingfile" help:"Local file to upload"`
+			Folder string `name:"folder" help:"Destination folder ID"`
+			Name   string `name:"name" help:"Override the uploaded file name"`
+		} `cmd:"" help:"Upload a local file to Drive"`
+
+		Update struct {
+			Ref  string `arg:"" required:"" name:"file" help:"Drive file ID or Drive/Docs URL"`
+			Path string `arg:"" required:"" name:"path" type:"existingfile" help:"Local file with new content"`
+			Name string `name:"name" help:"Also rename the file"`
+		} `cmd:"" help:"Replace an existing Drive file's content"`
+	} `cmd:"" help:"Google Drive operations"`
+
 	Filters struct {
 		List struct{} `cmd:"" help:"List all Gmail filters"`
 
@@ -521,6 +557,84 @@ func main() {
 		if err := runArtifactsDownload(cmdCtx, conn, cli.Artifacts.Download.MessageID,
 			cli.Artifacts.Download.Index, cli.Artifacts.Download.Filename,
 			cli.Artifacts.Download.OutputDir, cli.Artifacts.Download.Output, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive get <file>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveGet(cmdCtx, conn, cli.Drive.Get.Ref, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive export <file>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveExport(cmdCtx, conn, cli.Drive.Export.Ref,
+			cli.Drive.Export.ExportFormat, cli.Drive.Export.OutputDir,
+			cli.Drive.Export.Output, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive list":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveList(cmdCtx, conn, cli.Drive.List.Query,
+			cli.Drive.List.Folder, cli.Drive.List.Limit, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive search <term>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveSearch(cmdCtx, conn, cli.Drive.Search.Term,
+			cli.Drive.Search.Limit, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive upload <path>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveUpload(cmdCtx, conn, cli.Drive.Upload.Path,
+			cli.Drive.Upload.Folder, cli.Drive.Upload.Name, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive update <file> <path>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveUpdate(cmdCtx, conn, cli.Drive.Update.Ref,
+			cli.Drive.Update.Path, cli.Drive.Update.Name, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}

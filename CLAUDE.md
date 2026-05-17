@@ -91,6 +91,7 @@ The `CmdG` struct is the central object passed to all command handlers.
 - **`format.go`** - Email formatting (markdown, HTML, plain text with YAML frontmatter)
 - **`drive_artifacts.go`** - Detect Google Drive docs/files linked from email bodies (Gemini/Meet artifact chips)
 - **`artifacts.go`** - `artifacts list`/`artifacts download` commands (export/download detected Drive artifacts)
+- **`drive.go`** - `drive get`/`drive export` commands (general Drive file access by ID or URL, not email-specific)
 - **`tasklists.go`** - Task list operations (list, create, delete)
 - **`tasks.go`** - Task operations (list, read, create, complete, delete)
 
@@ -355,6 +356,59 @@ OAuth insufficient-scope case and the service-account domain-wide-delegation
 full `drive` scope (re-run `gwcli configure`, or authorize
 `https://www.googleapis.com/auth/drive` for the service account's numeric
 Client ID via domain-wide delegation in the Workspace Admin console).
+
+### Drive Commands (general, not email-specific)
+
+The `artifacts` plumbing is file-ID-driven and source-agnostic (only
+`extractDriveArtifacts` HTML scraping is email-specific). The `drive`
+command group (`drive.go`) exposes it directly for any Drive file by ID
+**or** Drive/Docs URL — no email involved:
+
+```bash
+# Metadata only (no download): id, name, mimeType, size, modifiedTime, owners
+gwcli drive get <file-id|url>
+gwcli drive get https://docs.google.com/document/d/<id>/edit --json
+
+# Export/download by ID or URL (requires the full drive scope)
+gwcli drive export <file-id|url> --output notes.md
+gwcli drive export <file-id|url> --output-dir ~/Downloads
+gwcli drive export <file-id|url> --export-format pdf   # override per-type default
+
+# List / search (paginated, all drives)
+gwcli drive list --query "mimeType='application/pdf'" --limit 50
+gwcli drive list --folder <folder-id>
+gwcli drive search "quarterly plan"
+
+# Write ops (full drive scope, unblocked since #40 took the full scope)
+gwcli drive upload ./report.pdf --folder <folder-id> --name "Q3 Report.pdf"
+gwcli drive update <file-id|url> ./report.pdf --name "Q3 Report (final).pdf"
+```
+
+`drive export` reuses `fetchDriveArtifact` (same native-export vs.
+blob-download branch, folder rejection, and `wrapDriveErr` auth mapping as
+`artifacts download`): Docs → `.md`, Sheets → `.csv`, Slides/unknown → PDF,
+Drawings → PNG; uploaded files via `Files.Get(alt=media)`. `resolveDriveRef`
+runs the argument through `parseDriveURL`; a non-URL argument is treated as a
+raw file ID. Output conventions mirror `artifacts`/`attachments` (`--output`,
+`--output-dir` default `~/Downloads`, exit codes 2/3). `drive get` does not
+download content but still needs the Drive scope (`Files.Get` metadata).
+
+`--export-format` overrides the per-type default for native docs:
+`resolveExportFormat` (`artifacts.go`) accepts a friendly alias
+(`pdf`/`md`/`docx`/`xlsx`/`csv`/`png`/...) or a raw MIME type. `drive list`
+takes a raw Drive `q` expression plus an optional `--folder` (adds a
+`'<id>' in parents` clause); `drive search <term>` wraps a term into
+`name contains / fullText contains`. Both paginate via `Files.List` with
+`SupportsAllDrives`/`IncludeItemsFromAllDrives`/`Corpora("allDrives")` and a
+`--limit` cap (0 = no cap). `drive upload`/`drive update` are `Files.Create`/
+`Files.Update` media uploads (write ops are intentionally unblocked because
+#40 took the full `drive` scope, not `drive.readonly`).
+
+**Export size cap:** Google Docs/Sheets/Slides `Files.Export` has a ~10 MB
+limit. `wrapDriveExportErr` (`artifacts.go`) detects the
+`exportSizeLimitExceeded` 403 and returns an actionable message suggesting
+`--export-format pdf` (server-side PDF export is not subject to the same
+cap). It falls through to `wrapDriveErr` for auth failures.
 
 ## Google Tasks Commands
 
