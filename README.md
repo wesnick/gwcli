@@ -4,12 +4,11 @@ A command-line interface for Gmail, Google Tasks, and Google Calendar, optimized
 
 ## About This Project
 
-gwcli combines functionality from three open-source projects:
+gwcli combines functionality from two open-source projects:
 
 | Project | Author | What gwcli uses |
 |---------|--------|-----------------|
 | [cmdg](https://github.com/ThomasHabets/cmdg) | Thomas Habets | Gmail API client, message handling, and core architecture (TUI removed) |
-| [gmailctl](https://github.com/mbrt/gmailctl) | Michele Bertasi | OAuth + service-account authentication helpers |
 | [gtasks](https://github.com/BRO3886/gtasks) | Siddhartha Varma | Google Tasks API integration patterns |
 
 **Key characteristics:**
@@ -24,7 +23,6 @@ This software is dual-licensed GPL and "Thomas is allowed to release a binary ve
 See [LICENSE](LICENSE) for full GPL v2 text.
 
 Additional components:
-- gmailctl code: MIT License (Copyright Michele Bertasi)
 - gtasks patterns: Apache License 2.0 (Copyright Siddhartha Varma)
 
 ## OAuth Scopes
@@ -617,7 +615,7 @@ gwcli messages read --prefer-plain <msg-id>
 
 ## Comparison with Source Projects
 
-gwcli combines and extends functionality from three projects:
+gwcli combines and extends functionality from two projects:
 
 ### vs cmdg
 
@@ -629,16 +627,6 @@ gwcli combines and extends functionality from three projects:
 | Scripting friendly | Limited | Designed for it |
 | JSON output | No | Yes |
 | Batch operations | No | Yes (via stdin) |
-
-### vs gmailctl
-
-| Feature | gmailctl | gwcli |
-|---------|----------|-------|
-| Filter management | Declarative (Jsonnet config) | Imperative CRUD (`filters` subcommand) |
-| Message operations | No | Yes (list, read, search, send) |
-| Label operations | Create/delete via config | Apply/remove (labels read from API) |
-| Config format | Jsonnet | None (no filter/label config file) |
-| Authentication | OAuth + Service Account | Same (auth helpers vendored from gmailctl) |
 
 ### vs gtasks
 
