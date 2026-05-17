@@ -30,9 +30,11 @@ import (
 )
 
 const (
-	// Scope for Gmail API. drive.readonly is required to export/download
-	// Drive artifacts linked from email bodies (see drive_artifacts.go).
-	scope = "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.settings.basic https://www.googleapis.com/auth/gmail.labels https://www.googleapis.com/auth/drive.readonly"
+	// Scope for Gmail API. The full drive scope is required to
+	// export/download Drive artifacts linked from email bodies (see
+	// drive_artifacts.go), and leaves room for future write use (e.g.
+	// sending Drive files as attachments).
+	scope = "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.settings.basic https://www.googleapis.com/auth/gmail.labels https://www.googleapis.com/auth/drive"
 
 	pageSize = 100
 
@@ -347,7 +349,7 @@ func oauth2Config(credBytes []byte) (*oauth2.Config, error) {
 			"https://www.googleapis.com/auth/gmail.modify",
 			"https://www.googleapis.com/auth/gmail.settings.basic",
 			"https://www.googleapis.com/auth/gmail.labels",
-			"https://www.googleapis.com/auth/drive.readonly",
+			"https://www.googleapis.com/auth/drive",
 		},
 	}, nil
 }

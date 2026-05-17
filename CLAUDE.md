@@ -182,10 +182,11 @@ The `gwcli messages read` command supports three output formats:
 **Drive artifacts** (`drive_artifacts` in frontmatter, `driveArtifacts` in
 `--json`): Some emails (notably Gemini/Google Meet "Notes by Gemini" chips)
 reference a Google Doc/Drive file via an in-body link rather than a MIME
-attachment. These are detected and surfaced — but **not** downloaded:
-fetching their content would require a Drive OAuth scope (`drive.readonly`)
-that gwcli does not currently request, and Google-native docs need
-`drive.Files.Export`, not the Gmail attachment API. Each artifact exposes the
+attachment. These are detected and surfaced here, and can be exported/
+downloaded via the `artifacts` command group (see Drive Artifact Commands).
+`messages read` itself never auto-fetches their content — same as MIME
+attachments. Fetching requires the full Drive scope and Google-native docs
+need `drive.Files.Export`, not the Gmail attachment API. Each artifact exposes the
 canonical `id` (the stable key — every URL is templated from it), `type`
 (`document`/`spreadsheet`/`presentation`/`form`/`folder`/`drive-file`),
 `title`, and a cleaned canonical `url`. Detection (`drive_artifacts.go`) only
@@ -235,13 +236,15 @@ Required OAuth scopes:
 - `https://www.googleapis.com/auth/gmail.labels`
 - `https://www.googleapis.com/auth/tasks`
 - `https://www.googleapis.com/auth/calendar`
-- `https://www.googleapis.com/auth/drive.readonly` (for `artifacts download`)
+- `https://www.googleapis.com/auth/drive` (for `artifacts download`)
 
-**Scope change note:** `drive.readonly` was added for Drive artifact
-export/download. Existing OAuth users must re-run `gwcli configure` to
-re-consent — Google does not grant new scopes to an already-issued
-`token.json`. `artifacts list` does **not** need this scope (Gmail only);
-only `artifacts download` does.
+**Scope change note:** the full `https://www.googleapis.com/auth/drive`
+scope was added for Drive artifact export/download (full, not
+`drive.readonly`, intentionally — leaves room for future write use such as
+attaching Drive files to outgoing mail). Existing OAuth users must re-run
+`gwcli configure` to re-consent — Google does not grant new scopes to an
+already-issued `token.json`. `artifacts list` does **not** need this scope
+(Gmail only); only `artifacts download` does.
 
 #### Service Account (Google Workspace Domain-Wide Delegation)
 
@@ -260,7 +263,7 @@ For Google Workspace accounts, you can use a service account to impersonate user
    - `https://www.googleapis.com/auth/gmail.labels`
    - `https://www.googleapis.com/auth/tasks`
    - `https://www.googleapis.com/auth/calendar`
-   - `https://www.googleapis.com/auth/drive.readonly` (only for `artifacts download`; Gmail/Tasks/Calendar work without it)
+   - `https://www.googleapis.com/auth/drive` (only for `artifacts download`; Gmail/Tasks/Calendar work without it). The service-account `DriveService` requests the full `drive` scope, so domain-wide delegation must authorize `https://www.googleapis.com/auth/drive` for the service account's Client ID (the numeric `client_id` from `credentials.json`). DWD token exchange is per-scope-set; an entry authorizing only `drive.readonly` will **not** satisfy it.
 9. Use the `--user` flag to specify which user to impersonate:
    ```bash
    gwcli --user user@example.com messages list
@@ -329,7 +332,7 @@ fetches them:
 gwcli artifacts list <message-id>
 gwcli artifacts list <message-id> --json
 
-# Download/export an artifact (requires the drive.readonly scope)
+# Download/export an artifact (requires the full drive scope)
 gwcli artifacts download <message-id> -i 0 --output notes.md
 gwcli artifacts download <message-id> --filename "Notes*" --output-dir ~/Downloads
 ```
@@ -348,9 +351,10 @@ templated from it.
 
 **Auth failures are made actionable**: `wrapDriveErr` detects both the
 OAuth insufficient-scope case and the service-account domain-wide-delegation
-`unauthorized_client` case, and tells the user exactly how to grant
-`drive.readonly` (re-run `gwcli configure`, or authorize the scope in the
-Workspace Admin console).
+`unauthorized_client` case, and tells the user exactly how to grant the
+full `drive` scope (re-run `gwcli configure`, or authorize
+`https://www.googleapis.com/auth/drive` for the service account's numeric
+Client ID via domain-wide delegation in the Workspace Admin console).
 
 ## Google Tasks Commands
 

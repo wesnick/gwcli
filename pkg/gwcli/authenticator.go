@@ -194,17 +194,19 @@ func (a *ServiceAccountAuthenticator) CalendarService(ctx context.Context) (*cal
 }
 
 // DriveService creates a Google Drive API service using service account
-// credentials. Domain-wide delegation must authorize the drive.readonly
-// scope for this to succeed; export/download of Drive artifacts depends on it.
+// credentials. Domain-wide delegation must authorize the full
+// https://www.googleapis.com/auth/drive scope for this to succeed;
+// export/download of Drive artifacts depends on it.
 func (a *ServiceAccountAuthenticator) DriveService(ctx context.Context) (*drive.Service, error) {
+	// Request only the Drive scope. Domain-wide delegation token exchange
+	// is all-or-nothing across the requested scope set, so bundling the
+	// Gmail/Tasks/Calendar scopes here would force DWD to authorize every
+	// one of them just to use Drive. The full drive scope (not readonly)
+	// is used intentionally to leave room for future write operations
+	// (e.g. attaching Drive files to outgoing mail).
 	config, err := google.JWTConfigFromJSON(
 		a.credBytes,
-		gmail.GmailModifyScope,
-		gmail.GmailSettingsBasicScope,
-		gmail.GmailLabelsScope,
-		tasks.TasksScope,
-		calendar.CalendarScope,
-		drive.DriveReadonlyScope,
+		drive.DriveScope,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parsing service account credentials: %w", err)

@@ -18,9 +18,10 @@ import (
 // because the granted credentials lack the drive.readonly scope.
 const driveScopeHelp = "Drive access is not authorized. " +
 	"For an OAuth account, re-run `gwcli configure` to grant the " +
-	"drive.readonly scope. For a service account, authorize " +
-	"https://www.googleapis.com/auth/drive.readonly via domain-wide " +
-	"delegation in the Google Workspace Admin console."
+	"https://www.googleapis.com/auth/drive scope. For a service account, " +
+	"authorize https://www.googleapis.com/auth/drive via domain-wide " +
+	"delegation (Google Workspace Admin console) for the service " +
+	"account's numeric Client ID."
 
 // wrapDriveErr turns the opaque Google API auth errors into an actionable
 // message pointing at the scope/consent fix, and passes everything else

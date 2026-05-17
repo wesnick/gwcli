@@ -126,7 +126,8 @@ func TestWrapDriveErr_ServiceAccountDWD(t *testing.T) {
 	raw := errAuth("auth: cannot fetch token: 401\n" +
 		`{"error":"unauthorized_client","error_description":"...not authorized for any of the scopes requested."}`)
 	got := wrapDriveErr(raw)
-	if !strings.Contains(got.Error(), "drive.readonly") {
+	if !strings.Contains(got.Error(), "gwcli configure") ||
+		!strings.Contains(got.Error(), "googleapis.com/auth/drive") {
 		t.Fatalf("expected actionable scope hint, got: %v", got)
 	}
 }
