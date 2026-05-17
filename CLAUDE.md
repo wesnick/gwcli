@@ -90,6 +90,7 @@ The `CmdG` struct is the central object passed to all command handlers.
 - **`output.go`** - Output formatting (JSON vs tabular text)
 - **`format.go`** - Email formatting (markdown, HTML, plain text with YAML frontmatter)
 - **`drive_artifacts.go`** - Detect Google Drive docs/files linked from email bodies (Gemini/Meet artifact chips)
+- **`artifacts.go`** - `artifacts list`/`artifacts download` commands (export/download detected Drive artifacts)
 - **`tasklists.go`** - Task list operations (list, create, delete)
 - **`tasks.go`** - Task operations (list, read, create, complete, delete)
 
@@ -234,6 +235,13 @@ Required OAuth scopes:
 - `https://www.googleapis.com/auth/gmail.labels`
 - `https://www.googleapis.com/auth/tasks`
 - `https://www.googleapis.com/auth/calendar`
+- `https://www.googleapis.com/auth/drive.readonly` (for `artifacts download`)
+
+**Scope change note:** `drive.readonly` was added for Drive artifact
+export/download. Existing OAuth users must re-run `gwcli configure` to
+re-consent — Google does not grant new scopes to an already-issued
+`token.json`. `artifacts list` does **not** need this scope (Gmail only);
+only `artifacts download` does.
 
 #### Service Account (Google Workspace Domain-Wide Delegation)
 
@@ -252,6 +260,7 @@ For Google Workspace accounts, you can use a service account to impersonate user
    - `https://www.googleapis.com/auth/gmail.labels`
    - `https://www.googleapis.com/auth/tasks`
    - `https://www.googleapis.com/auth/calendar`
+   - `https://www.googleapis.com/auth/drive.readonly` (only for `artifacts download`; Gmail/Tasks/Calendar work without it)
 9. Use the `--user` flag to specify which user to impersonate:
    ```bash
    gwcli --user user@example.com messages list
@@ -306,6 +315,42 @@ The Gmail API has no filter "update" — to change a filter, delete it and
 create a new one. The canonical list of an account's filters is meant to live
 in the editable skill doc (`claude-skill-gwcli/SKILL.md`) as a table that an
 agent can recreate via individual `filters create` calls.
+
+### Drive Artifact Commands
+
+Some emails (notably Gemini/Google Meet "Notes by Gemini" chips) link a
+Google Doc/Drive file in the body rather than attaching a MIME part. Phase 1
+surfaces these in `messages read` frontmatter/`--json` (`drive_artifacts`).
+The `artifacts` command group (mirrors `attachments` 1:1) lists and
+fetches them:
+
+```bash
+# List Drive artifacts linked from a message (Gmail only — no Drive scope)
+gwcli artifacts list <message-id>
+gwcli artifacts list <message-id> --json
+
+# Download/export an artifact (requires the drive.readonly scope)
+gwcli artifacts download <message-id> -i 0 --output notes.md
+gwcli artifacts download <message-id> --filename "Notes*" --output-dir ~/Downloads
+```
+
+Selection flags match `attachments download`: `--index/-i` (0-based,
+comma-separated/repeatable), `--filename/-f` (glob, matched against the
+artifact **title**), `--output-dir` (default `~/Downloads`), `--output`
+(single-artifact only). No selection = all artifacts.
+
+**Export behavior** (`artifacts.go`): native Google-apps files are
+**exported** via `drive.Files.Export` (not blob-downloaded) — Docs →
+`text/markdown` (`.md`), Sheets → `text/csv`, Slides/unknown → PDF, Drawings →
+PNG. Uploaded (binary) files use `Files.Get(alt=media)`. Folders are
+rejected. The canonical Drive file `id` is the stable key; every URL is
+templated from it.
+
+**Auth failures are made actionable**: `wrapDriveErr` detects both the
+OAuth insufficient-scope case and the service-account domain-wide-delegation
+`unauthorized_client` case, and tells the user exactly how to grant
+`drive.readonly` (re-run `gwcli configure`, or authorize the scope in the
+Workspace Admin console).
 
 ## Google Tasks Commands
 

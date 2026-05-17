@@ -15,6 +15,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/calendar/v3"
+	drive "google.golang.org/api/drive/v3"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
 	"google.golang.org/api/tasks/v1"
@@ -190,6 +191,30 @@ func (a *ServiceAccountAuthenticator) CalendarService(ctx context.Context) (*cal
 
 	// Create the Calendar service with the service account credentials
 	return calendar.NewService(ctx, option.WithTokenSource(config.TokenSource(ctx)))
+}
+
+// DriveService creates a Google Drive API service using service account
+// credentials. Domain-wide delegation must authorize the drive.readonly
+// scope for this to succeed; export/download of Drive artifacts depends on it.
+func (a *ServiceAccountAuthenticator) DriveService(ctx context.Context) (*drive.Service, error) {
+	config, err := google.JWTConfigFromJSON(
+		a.credBytes,
+		gmail.GmailModifyScope,
+		gmail.GmailSettingsBasicScope,
+		gmail.GmailLabelsScope,
+		tasks.TasksScope,
+		calendar.CalendarScope,
+		drive.DriveReadonlyScope,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("parsing service account credentials: %w", err)
+	}
+
+	// Set the user to impersonate
+	config.Subject = a.userEmail
+
+	// Create the Drive service with the service account credentials
+	return drive.NewService(ctx, option.WithTokenSource(config.TokenSource(ctx)))
 }
 
 // IsServiceAccount detects if the credentials JSON is for a service account.
