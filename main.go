@@ -130,6 +130,20 @@ type CLI struct {
 		} `cmd:"" help:"Download attachments"`
 	} `cmd:"" help:"Attachment operations"`
 
+	Artifacts struct {
+		List struct {
+			MessageID string `arg:"" required:"" help:"Message ID"`
+		} `cmd:"" help:"List Google Drive artifacts linked from a message"`
+
+		Download struct {
+			MessageID string   `arg:"" required:"" help:"Message ID"`
+			Index     []string `help:"Artifact index (0-based, supports comma-separated and multiple flags)" short:"i"`
+			Filename  string   `help:"Title pattern (glob)" short:"f"`
+			OutputDir string   `help:"Output directory" type:"path" default:"~/Downloads"`
+			Output    string   `help:"Output filename (single artifact only)"`
+		} `cmd:"" help:"Download/export Google Drive artifacts linked from a message"`
+	} `cmd:"" help:"Google Drive artifact operations (Gemini/Meet doc links)"`
+
 	Filters struct {
 		List struct{} `cmd:"" help:"List all Gmail filters"`
 
@@ -479,6 +493,34 @@ func main() {
 		if err := runAttachmentsDownload(cmdCtx, conn, cli.Attachments.Download.MessageID,
 			cli.Attachments.Download.Index, cli.Attachments.Download.Filename,
 			cli.Attachments.Download.OutputDir, cli.Attachments.Download.Output, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "artifacts list <message-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+
+		if err := runArtifactsList(cmdCtx, conn, cli.Artifacts.List.MessageID, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "artifacts download <message-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+
+		if err := runArtifactsDownload(cmdCtx, conn, cli.Artifacts.Download.MessageID,
+			cli.Artifacts.Download.Index, cli.Artifacts.Download.Filename,
+			cli.Artifacts.Download.OutputDir, cli.Artifacts.Download.Output, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}

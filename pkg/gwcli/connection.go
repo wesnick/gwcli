@@ -30,8 +30,11 @@ import (
 )
 
 const (
-	// Scope for Gmail API.
-	scope = "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.settings.basic https://www.googleapis.com/auth/gmail.labels"
+	// Scope for Gmail API. The full drive scope is required to
+	// export/download Drive artifacts linked from email bodies (see
+	// drive_artifacts.go), and leaves room for future write use (e.g.
+	// sending Drive files as attachments).
+	scope = "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.settings.basic https://www.googleapis.com/auth/gmail.labels https://www.googleapis.com/auth/drive"
 
 	pageSize = 100
 
@@ -246,6 +249,22 @@ func New(configDir string, userEmail string, verbose bool) (*CmdG, error) {
 		}
 		conn.calendar = calSvc
 
+		// Initialize Drive service for service accounts. This is best-effort:
+		// it only works if domain-wide delegation authorizes drive.readonly.
+		// Don't fail the whole connection if it can't be built — Gmail/Tasks/
+		// Calendar must keep working; Drive errors surface at call time.
+		credFile4, err := os.Open(paths.Credentials)
+		if err == nil {
+			defer credFile4.Close()
+			if saAuth, err := NewServiceAccountAuthenticator(credFile4, userEmail); err == nil {
+				if driveSvc, err := saAuth.DriveService(ctx); err == nil {
+					conn.drive = driveSvc
+				} else if verbose {
+					log.Infof("Drive service unavailable for service account: %v", err)
+				}
+			}
+		}
+
 		if verbose {
 			log.Infof("Service account connection ready")
 		}
@@ -330,6 +349,7 @@ func oauth2Config(credBytes []byte) (*oauth2.Config, error) {
 			"https://www.googleapis.com/auth/gmail.modify",
 			"https://www.googleapis.com/auth/gmail.settings.basic",
 			"https://www.googleapis.com/auth/gmail.labels",
+			"https://www.googleapis.com/auth/drive",
 		},
 	}, nil
 }
@@ -532,6 +552,13 @@ func (c *CmdG) TasksService() *tasks.Service {
 // CalendarService returns the Google Calendar API service client.
 func (c *CmdG) CalendarService() *calendar.Service {
 	return c.calendar
+}
+
+// DriveService returns the Google Drive API service client. It may be nil if
+// the connection was set up without Drive access (e.g. a service account
+// whose domain-wide delegation does not include the Drive scope).
+func (c *CmdG) DriveService() *drive.Service {
+	return c.drive
 }
 
 // GetProfile returns the profile for the current user.

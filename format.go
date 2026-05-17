@@ -28,6 +28,10 @@ type EmailFrontmatter struct {
 	Date      string   `yaml:"date"`
 	Labels    []string `yaml:"labels,omitempty"`
 	Note      string   `yaml:"note,omitempty"` // For fallback messages
+
+	// DriveArtifacts are Google Drive docs/files linked from the body
+	// (e.g. Gemini/Meet "Notes by Gemini" chips). Not MIME attachments.
+	DriveArtifacts []driveArtifact `yaml:"drive_artifacts,omitempty"`
 }
 
 // AttachmentMeta represents attachment metadata in YAML format
@@ -139,6 +143,28 @@ func formatEmailAsHTML(frontmatter EmailFrontmatter, body string, attachments []
 				escapeHTML(att.Filename),
 				escapeHTML(att.MimeType),
 				formatSizeBytes(att.Size)))
+		}
+		output.WriteString("  </ul>\n")
+		output.WriteString("</div>\n")
+	}
+
+	// Drive artifacts section (linked Google Docs/Drive files, not MIME parts)
+	if len(frontmatter.DriveArtifacts) > 0 {
+		output.WriteString("\n<hr class=\"email-separator\">\n\n")
+		output.WriteString("<div class=\"email-drive-artifacts\">\n")
+		output.WriteString("  <h3>Drive Artifacts</h3>\n")
+		output.WriteString("  <ul>\n")
+		for _, a := range frontmatter.DriveArtifacts {
+			title := a.Title
+			if title == "" {
+				title = a.Type
+			}
+			output.WriteString(fmt.Sprintf("    <li>[%d] <a href=\"%s\">%s</a> (%s, <code>%s</code>)</li>\n",
+				a.Index,
+				escapeHTML(a.URL),
+				escapeHTML(title),
+				escapeHTML(a.Type),
+				escapeHTML(a.ID)))
 		}
 		output.WriteString("  </ul>\n")
 		output.WriteString("</div>\n")
