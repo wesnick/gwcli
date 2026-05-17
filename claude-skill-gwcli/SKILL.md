@@ -16,11 +16,12 @@ gwcli provides these main resource types:
 1. **Messages** - Read, send, search, delete, mark read/unread, and move emails
 2. **Labels** - List labels, apply/remove labels to messages
 3. **Attachments** - List and download email attachments
-4. **Filters** - List, get, create, and delete Gmail filters directly
-5. **Task Lists** - List, create, and delete Google Task lists
-6. **Tasks** - List, create, read, complete, and delete tasks
-7. **Calendars** - List accessible Google Calendars
-8. **Events** - List, create, read, update, delete, search, and import calendar events
+4. **Drive Artifacts** - List and export/download Google Drive docs linked in email bodies (e.g. Gemini/Meet "Notes by Gemini")
+5. **Filters** - List, get, create, and delete Gmail filters directly
+6. **Task Lists** - List, create, and delete Google Task lists
+7. **Tasks** - List, create, read, complete, and delete tasks
+8. **Calendars** - List accessible Google Calendars
+9. **Events** - List, create, read, update, delete, search, and import calendar events
 
 ## When to Use This Skill
 
@@ -31,6 +32,7 @@ Use this skill when the user:
 - Wants to search, filter, or process Gmail messages programmatically
 - Needs to manage labels or organize emails
 - Wants to download attachments in bulk
+- Needs the linked Google Doc from a Gemini/Meet "Notes by Gemini" email (use `artifacts`, not `attachments`)
 - Needs to manage Google Tasks (create, complete, list tasks)
 - Wants to work with Google Calendar (create events, check schedule, find conflicts)
 
@@ -338,6 +340,46 @@ gwcli messages list --label "Invoices" --json | \
     gwcli attachments download "$id" --output-dir ./invoices
   done
 ```
+
+### Drive Artifact Operations
+
+Some emails (notably Gemini/Google Meet "Notes by Gemini") link a Google
+Doc/Drive file in the body instead of attaching a MIME file. These are
+**not** attachments and won't appear in `attachments list`. They are
+surfaced in `messages read` (the `drive_artifacts` frontmatter block /
+`driveArtifacts` in `--json`) and handled by the `artifacts` command, which
+mirrors `attachments` exactly.
+
+**List Drive artifacts** (Gmail only — no extra scope needed):
+```bash
+gwcli artifacts list <message-id>
+gwcli artifacts list <message-id> --json
+```
+
+**Export/download an artifact** (requires the Drive scope — see note):
+```bash
+# Same selection flags as `attachments download`
+gwcli artifacts download <message-id> --index 0
+gwcli artifacts download <message-id> -i 0 --output notes.md
+gwcli artifacts download <message-id> --filename "Notes*" --output-dir ./notes
+```
+
+**Important notes:**
+- Native Google docs are **exported**, not blob-downloaded: Docs → Markdown
+  (`.md`), Sheets → CSV, Slides/unknown → PDF, Drawings → PNG. Uploaded
+  (binary) files download as-is. Folders are rejected.
+- `--filename`/`-f` matches a glob against the artifact **title** (not a
+  real filename); `--index`/`-i` and `--output`/`--output-dir` behave as in
+  `attachments download`.
+- The canonical Drive file `id` (shown by `artifacts list`) is the stable
+  key — every Google URL is templated from it.
+- **Auth:** `artifacts download` needs the full
+  `https://www.googleapis.com/auth/drive` scope. OAuth users who set up
+  gwcli before this feature must re-run `gwcli configure` to re-consent.
+  Service accounts need that scope authorized via domain-wide delegation
+  for the service account's numeric Client ID. If it's missing, gwcli
+  prints an actionable error explaining exactly how to fix it.
+  `artifacts list` does not need this scope.
 
 ### Google Tasks
 
