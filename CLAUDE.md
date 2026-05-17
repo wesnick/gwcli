@@ -91,6 +91,7 @@ The `CmdG` struct is the central object passed to all command handlers.
 - **`format.go`** - Email formatting (markdown, HTML, plain text with YAML frontmatter)
 - **`drive_artifacts.go`** - Detect Google Drive docs/files linked from email bodies (Gemini/Meet artifact chips)
 - **`artifacts.go`** - `artifacts list`/`artifacts download` commands (export/download detected Drive artifacts)
+- **`drive.go`** - `drive get`/`drive export` commands (general Drive file access by ID or URL, not email-specific)
 - **`tasklists.go`** - Task list operations (list, create, delete)
 - **`tasks.go`** - Task operations (list, read, create, complete, delete)
 
@@ -355,6 +356,32 @@ OAuth insufficient-scope case and the service-account domain-wide-delegation
 full `drive` scope (re-run `gwcli configure`, or authorize
 `https://www.googleapis.com/auth/drive` for the service account's numeric
 Client ID via domain-wide delegation in the Workspace Admin console).
+
+### Drive Commands (general, not email-specific)
+
+The `artifacts` plumbing is file-ID-driven and source-agnostic (only
+`extractDriveArtifacts` HTML scraping is email-specific). The `drive`
+command group (`drive.go`) exposes it directly for any Drive file by ID
+**or** Drive/Docs URL — no email involved:
+
+```bash
+# Metadata only (no download): id, name, mimeType, size, modifiedTime, owners
+gwcli drive get <file-id|url>
+gwcli drive get https://docs.google.com/document/d/<id>/edit --json
+
+# Export/download by ID or URL (requires the full drive scope)
+gwcli drive export <file-id|url> --output notes.md
+gwcli drive export <file-id|url> --output-dir ~/Downloads
+```
+
+`drive export` reuses `fetchDriveArtifact` (same native-export vs.
+blob-download branch, folder rejection, and `wrapDriveErr` auth mapping as
+`artifacts download`): Docs → `.md`, Sheets → `.csv`, Slides/unknown → PDF,
+Drawings → PNG; uploaded files via `Files.Get(alt=media)`. `resolveDriveRef`
+runs the argument through `parseDriveURL`; a non-URL argument is treated as a
+raw file ID. Output conventions mirror `artifacts`/`attachments` (`--output`,
+`--output-dir` default `~/Downloads`, exit codes 2/3). `drive get` does not
+download content but still needs the Drive scope (`Files.Get` metadata).
 
 ## Google Tasks Commands
 

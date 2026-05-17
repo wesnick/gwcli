@@ -144,6 +144,18 @@ type CLI struct {
 		} `cmd:"" help:"Download/export Google Drive artifacts linked from a message"`
 	} `cmd:"" help:"Google Drive artifact operations (Gemini/Meet doc links)"`
 
+	Drive struct {
+		Get struct {
+			Ref string `arg:"" required:"" name:"file" help:"Drive file ID or Drive/Docs URL"`
+		} `cmd:"" help:"Show Google Drive file metadata"`
+
+		Export struct {
+			Ref       string `arg:"" required:"" name:"file" help:"Drive file ID or Drive/Docs URL"`
+			OutputDir string `help:"Output directory" type:"path" default:"~/Downloads"`
+			Output    string `help:"Output filename"`
+		} `cmd:"" help:"Export/download a Google Drive file by ID or URL"`
+	} `cmd:"" help:"Google Drive operations"`
+
 	Filters struct {
 		List struct{} `cmd:"" help:"List all Gmail filters"`
 
@@ -521,6 +533,31 @@ func main() {
 		if err := runArtifactsDownload(cmdCtx, conn, cli.Artifacts.Download.MessageID,
 			cli.Artifacts.Download.Index, cli.Artifacts.Download.Filename,
 			cli.Artifacts.Download.OutputDir, cli.Artifacts.Download.Output, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive get <file>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveGet(cmdCtx, conn, cli.Drive.Get.Ref, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive export <file>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveExport(cmdCtx, conn, cli.Drive.Export.Ref,
+			cli.Drive.Export.OutputDir, cli.Drive.Export.Output, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
