@@ -140,9 +140,11 @@ func TestRunDriveExport_FormatOverride(t *testing.T) {
 }
 
 func TestRunDriveList(t *testing.T) {
+	var gotQuery string
 	client := &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			if strings.HasSuffix(req.URL.Path, "/drive/v3/files") {
+				gotQuery = req.URL.Query().Get("q")
 				body := `{"files":[{"id":"F1","name":"a.txt","mimeType":"text/plain","size":"12"},` +
 					`{"id":"F2","name":"b.pdf","mimeType":"application/pdf","size":"34"}]}`
 				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
@@ -157,8 +159,11 @@ func TestRunDriveList(t *testing.T) {
 
 	var buf bytes.Buffer
 	out := &outputWriter{json: true, writer: &buf}
-	if err := runDriveList(context.Background(), conn, "", "", 100, out); err != nil {
+	if err := runDriveList(context.Background(), conn, "", "FOLDER1", 100, out); err != nil {
 		t.Fatalf("runDriveList() error = %v", err)
+	}
+	if !strings.Contains(gotQuery, "trashed = false") {
+		t.Fatalf("list query %q missing trashed = false filter", gotQuery)
 	}
 	var got []driveListFile
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
@@ -193,7 +198,7 @@ func TestRunDriveUpload(t *testing.T) {
 
 	var buf bytes.Buffer
 	out := &outputWriter{json: true, writer: &buf}
-	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER1", "", false, false, out); err != nil {
+	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER1", "", false, false, "", out); err != nil {
 		t.Fatalf("runDriveUpload() error = %v", err)
 	}
 	var got map[string]interface{}
@@ -348,7 +353,7 @@ func TestRunDriveUpload_UpsertReplacesExisting(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	out := &outputWriter{json: true, writer: &buf}
-	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER", "", false, true, out); err != nil {
+	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER", "", false, true, "", out); err != nil {
 		t.Fatalf("runDriveUpload(upsert) error = %v", err)
 	}
 	if updatedID != "EXIST" {
@@ -374,5 +379,105 @@ func TestResolveExportFormat(t *testing.T) {
 	}
 	if _, _, ok := resolveExportFormat(""); ok {
 		t.Errorf("resolveExportFormat(\"\") ok = true, want false")
+	}
+}
+
+func TestResolveDriveTargetMime(t *testing.T) {
+	cases := map[string]string{
+		"":             "",
+		"doc":          "application/vnd.google-apps.document",
+		"Document":     "application/vnd.google-apps.document",
+		"sheet":        "application/vnd.google-apps.spreadsheet",
+		"spreadsheet":  "application/vnd.google-apps.spreadsheet",
+		"slides":       "application/vnd.google-apps.presentation",
+		"presentation": "application/vnd.google-apps.presentation",
+		"drawing":      "application/vnd.google-apps.drawing",
+		"form":         "application/vnd.google-apps.form",
+		"application/vnd.google-apps.script": "application/vnd.google-apps.script",
+	}
+	for in, want := range cases {
+		got, err := resolveDriveTargetMime(in)
+		if err != nil {
+			t.Errorf("resolveDriveTargetMime(%q) unexpected error %v", in, err)
+		}
+		if got != want {
+			t.Errorf("resolveDriveTargetMime(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if _, err := resolveDriveTargetMime("xlsx"); err == nil {
+		t.Errorf("resolveDriveTargetMime(xlsx) err = nil, want error")
+	}
+	if _, err := resolveDriveTargetMime("application/pdf"); err == nil {
+		t.Errorf("resolveDriveTargetMime(application/pdf) err = nil, want error")
+	}
+}
+
+// TestRunDriveUpload_ConvertCSVToSheet verifies a .csv upload with --convert
+// declares the spreadsheet target *and* a text/csv source content type (so
+// Drive does not content-sniff it as text/plain and import it as a Doc).
+func TestRunDriveUpload_ConvertCSVToSheet(t *testing.T) {
+	var body string
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Path, "/upload/drive/v3/files") {
+				b, _ := io.ReadAll(req.Body)
+				body = string(b)
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"S1","name":"data.csv","mimeType":"application/vnd.google-apps.spreadsheet"}`))}, nil
+			}
+			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+		}),
+	}
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "data.csv")
+	if err := os.WriteFile(src, []byte("a,b\n1,2\n"), 0644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER", "", true, false, "", out); err != nil {
+		t.Fatalf("runDriveUpload(convert) error = %v", err)
+	}
+	if !strings.Contains(body, "application/vnd.google-apps.spreadsheet") {
+		t.Fatalf("upload body missing spreadsheet target mimeType: %s", body)
+	}
+	if !strings.Contains(body, "text/csv") {
+		t.Fatalf("upload body missing text/csv source content type: %s", body)
+	}
+}
+
+// TestRunDriveUpload_AsOverride verifies --as forces the target type even
+// without --convert and overrides extension inference.
+func TestRunDriveUpload_AsOverride(t *testing.T) {
+	var body string
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Path, "/upload/drive/v3/files") {
+				b, _ := io.ReadAll(req.Body)
+				body = string(b)
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"D1","name":"notes.csv","mimeType":"application/vnd.google-apps.document"}`))}, nil
+			}
+			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+		}),
+	}
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "notes.csv")
+	if err := os.WriteFile(src, []byte("a,b\n1,2\n"), 0644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER", "", false, false, "doc", out); err != nil {
+		t.Fatalf("runDriveUpload(as=doc) error = %v", err)
+	}
+	if !strings.Contains(body, "application/vnd.google-apps.document") {
+		t.Fatalf("upload body missing document target mimeType from --as: %s", body)
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/wesnick/gwcli/pkg/gwcli"
 	drive "google.golang.org/api/drive/v3"
+	"google.golang.org/api/googleapi"
 )
 
 // resolveDriveRef accepts either a raw Drive file ID or a Drive/Docs URL and
@@ -297,6 +298,12 @@ func runDriveList(ctx context.Context, conn *gwcli.CmdG, query, folder string, l
 	if folder != "" {
 		clauses = append(clauses, fmt.Sprintf("%q in parents", folder))
 	}
+	// Hide trashed items by default (they otherwise leak into folder/listing
+	// results). A caller who explicitly filters on `trashed` in --query keeps
+	// full control.
+	if !strings.Contains(query, "trashed") {
+		clauses = append(clauses, "trashed = false")
+	}
 	files, err := driveList(ctx, conn, strings.Join(clauses, " and "), limit)
 	if err != nil {
 		return err
@@ -311,7 +318,7 @@ func runDriveSearch(ctx context.Context, conn *gwcli.CmdG, term string, limit in
 		return fmt.Errorf("a search term is required")
 	}
 	esc := strings.ReplaceAll(term, "'", `\'`)
-	q := fmt.Sprintf("name contains '%s' or fullText contains '%s'", esc, esc)
+	q := fmt.Sprintf("(name contains '%s' or fullText contains '%s') and trashed = false", esc, esc)
 	files, err := driveList(ctx, conn, q, limit)
 	if err != nil {
 		return err
@@ -343,8 +350,13 @@ func runDriveUpdate(ctx context.Context, conn *gwcli.CmdG, ref, path, name strin
 		meta.Name = name
 	}
 
+	var mediaOpts []googleapi.MediaOption
+	if opt := driveMediaOption(path); opt != nil {
+		mediaOpts = append(mediaOpts, opt)
+	}
+
 	updated, err := svc.Files.Update(art.ID, meta).
-		Media(f).
+		Media(f, mediaOpts...).
 		SupportsAllDrives(true).
 		Fields(driveWriteFields).
 		Context(ctx).

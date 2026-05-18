@@ -200,6 +200,7 @@ type CLI struct {
 			Folder  string   `name:"folder" help:"Destination folder ID or URL"`
 			Name    string   `name:"name" help:"Override the uploaded file name (single file only)"`
 			Convert bool     `name:"convert" help:"Convert to the native Google-apps type by extension (csv->Sheet, md->Doc, ...)"`
+			As      string   `name:"as" help:"Force the converted-to Google type, overriding extension inference: doc|sheet|slides|drawing|form or a raw application/vnd.google-apps.* type"`
 			Upsert  bool     `name:"upsert" help:"Replace an existing same-name file in the destination instead of creating a duplicate"`
 		} `cmd:"" help:"Upload local file(s)/directory to Drive"`
 
@@ -701,7 +702,8 @@ func main() {
 		}
 		if err := runDriveUpload(cmdCtx, conn, cli.Drive.Upload.Paths,
 			cli.Drive.Upload.Folder, cli.Drive.Upload.Name,
-			cli.Drive.Upload.Convert, cli.Drive.Upload.Upsert, out); err != nil {
+			cli.Drive.Upload.Convert, cli.Drive.Upload.Upsert,
+			cli.Drive.Upload.As, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
