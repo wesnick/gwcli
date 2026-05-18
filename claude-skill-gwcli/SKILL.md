@@ -413,6 +413,7 @@ so the next step can chain without a lookup):
 # Upload: one or many paths, a glob, or a directory (recursed + mirrored)
 gwcli drive upload ./report.pdf --folder <folder-id> --name "Q3 Report.pdf"
 gwcli drive upload *.csv --folder <folder-id> --convert      # CSV->Sheet, MD->Doc...
+gwcli drive upload notes.txt --folder <folder-id> --as sheet # force converted-to type
 gwcli drive upload ./package-dir --folder <folder-id>        # recurses with mkdir
 gwcli drive upload ./01-catalog.csv --folder <folder-id> --upsert  # safe rerun
 gwcli drive update <file-id|url> ./report.pdf --name "Q3 Report (final).pdf"
@@ -456,7 +457,15 @@ gwcli drive permissions <file-id|url>                        # who can access (a
 - `drive rm` requires `--force` (non-interactive). Default is trash
   (recoverable); `--permanent` is irreversible.
 - `--convert` maps by local extension (csv/tsv/xls*→Sheet,
-  txt/md/doc*/html→Doc, ppt*→Slides); other extensions upload as-is.
+  txt/md/doc*/html→Doc, ppt*→Slides); other extensions upload as-is. The
+  source content type is declared by extension so Drive converts to the
+  right native type instead of sniffing a `.csv` as text and making a Doc.
+- `--as doc|sheet|slides|drawing|form` (or a raw
+  `application/vnd.google-apps.*` type) forces the converted-to type,
+  overriding extension inference and implying conversion without
+  `--convert`.
+- `drive list`/`drive search` exclude trashed items by default; put an
+  explicit `trashed` clause in `--query` to override.
 - A bad upload is undone with `drive rm <id> --force`; combine with the
   `id` from the upload's JSON for a clean rollback.
 
