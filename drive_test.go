@@ -193,7 +193,7 @@ func TestRunDriveUpload(t *testing.T) {
 
 	var buf bytes.Buffer
 	out := &outputWriter{json: true, writer: &buf}
-	if err := runDriveUpload(context.Background(), conn, src, "FOLDER1", "", out); err != nil {
+	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER1", "", false, false, out); err != nil {
 		t.Fatalf("runDriveUpload() error = %v", err)
 	}
 	var got map[string]interface{}
@@ -204,6 +204,156 @@ func TestRunDriveUpload(t *testing.T) {
 		t.Fatalf("unexpected upload result: %+v", got)
 	}
 	_ = gotName
+}
+
+func TestDriveQuoteValue(t *testing.T) {
+	if got := driveQuoteValue(`a'b`); got != `a\'b` {
+		t.Errorf("driveQuoteValue(a'b) = %q, want a\\'b", got)
+	}
+	if got := driveQuoteValue(`a\b`); got != `a\\b` {
+		t.Errorf("driveQuoteValue(a\\b) = %q, want a\\\\b", got)
+	}
+}
+
+func TestRunDriveMkdir_DedupeReusesExisting(t *testing.T) {
+	createCalled := false
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch {
+			case req.Method == "GET" && strings.HasSuffix(req.URL.Path, "/drive/v3/files"):
+				body := `{"files":[{"id":"EXIST1","name":"Intern Package",` +
+					`"mimeType":"application/vnd.google-apps.folder"}]}`
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+			case req.Method == "POST" && strings.HasSuffix(req.URL.Path, "/drive/v3/files"):
+				createCalled = true
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"NEW"}`))}, nil
+			}
+			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+		}),
+	}
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+	if err := runDriveMkdir(context.Background(), conn, "Intern Package", "", false, out); err != nil {
+		t.Fatalf("runDriveMkdir() error = %v", err)
+	}
+	if createCalled {
+		t.Fatalf("expected dedupe to reuse existing folder, but Create was called")
+	}
+	var got map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v (raw %s)", err, buf.String())
+	}
+	if got["id"] != "EXIST1" {
+		t.Fatalf("mkdir result id = %v, want EXIST1", got["id"])
+	}
+}
+
+func TestRunDriveMove_Reparents(t *testing.T) {
+	var addParents, removeParents string
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch {
+			case req.Method == "GET" && strings.Contains(req.URL.Path, "/drive/v3/files/F1"):
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"F1","parents":["OLD"]}`))}, nil
+			case req.Method == "PATCH" && strings.Contains(req.URL.Path, "/drive/v3/files/F1"):
+				addParents = req.URL.Query().Get("addParents")
+				removeParents = req.URL.Query().Get("removeParents")
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"F1","name":"x","parents":["DEST"]}`))}, nil
+			}
+			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+		}),
+	}
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+	if err := runDriveMove(context.Background(), conn, "F1", "DEST", out); err != nil {
+		t.Fatalf("runDriveMove() error = %v", err)
+	}
+	if addParents != "DEST" || removeParents != "OLD" {
+		t.Fatalf("reparent = add %q remove %q, want add DEST remove OLD", addParents, removeParents)
+	}
+}
+
+func TestRunDriveRm_TrashRequiresForce(t *testing.T) {
+	conn, err := gwcli.NewFake(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"F1","name":"x"}`))}, nil
+	})})
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+	if err := runDriveRm(context.Background(), conn, "F1", false, false, out); err == nil {
+		t.Fatalf("runDriveRm without --force expected error, got nil")
+	}
+}
+
+func TestRunDriveShare_AnyoneNeedsNoEmail(t *testing.T) {
+	var sentType, sentRole string
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "POST" && strings.Contains(req.URL.Path, "/permissions") {
+				var p map[string]interface{}
+				_ = json.NewDecoder(req.Body).Decode(&p)
+				sentType, _ = p["type"].(string)
+				sentRole, _ = p["role"].(string)
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"P1","type":"anyone","role":"reader"}`))}, nil
+			}
+			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+		}),
+	}
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+	if err := runDriveShare(context.Background(), conn, "F1", "anyone", "reader", "", "", false, out); err != nil {
+		t.Fatalf("runDriveShare() error = %v", err)
+	}
+	if sentType != "anyone" || sentRole != "reader" {
+		t.Fatalf("share sent type=%q role=%q, want anyone/reader", sentType, sentRole)
+	}
+}
+
+func TestRunDriveUpload_UpsertReplacesExisting(t *testing.T) {
+	updatedID := ""
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch {
+			case req.Method == "GET" && strings.HasSuffix(req.URL.Path, "/drive/v3/files"):
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"files":[{"id":"EXIST","name":"data.csv"}]}`))}, nil
+			case strings.Contains(req.URL.Path, "/upload/drive/v3/files/EXIST") || (req.Method == "PATCH" && strings.Contains(req.URL.Path, "/drive/v3/files/EXIST")):
+				updatedID = "EXIST"
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"EXIST","name":"data.csv"}`))}, nil
+			}
+			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+		}),
+	}
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "data.csv")
+	if err := os.WriteFile(src, []byte("a,b\n1,2\n"), 0644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER", "", false, true, out); err != nil {
+		t.Fatalf("runDriveUpload(upsert) error = %v", err)
+	}
+	if updatedID != "EXIST" {
+		t.Fatalf("upsert did not update existing file (updatedID=%q)", updatedID)
+	}
 }
 
 func TestResolveExportFormat(t *testing.T) {

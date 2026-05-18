@@ -535,6 +535,131 @@ gwcli messages list --label "Invoices" --json | \
   done
 ```
 
+## Drive Commands
+
+General Google Drive access by file ID **or** Drive/Docs URL (not
+email-specific). Requires the full `https://www.googleapis.com/auth/drive`
+scope. Every write verb prints `id`/`name`/`mimeType`/`size`/`webViewLink`/
+`parents` with `--json` so results chain without a search round-trip.
+
+### gwcli drive get
+
+Show file metadata only (no content download).
+
+```bash
+gwcli drive get <file-id|url> [--json]
+```
+
+### gwcli drive export
+
+Export native Google docs (Docs→`.md`, Sheets→`.csv`, Slides/unknown→PDF,
+Drawings→PNG) or download binary files. A folder argument recurses and
+mirrors the tree locally.
+
+```bash
+gwcli drive export <file-id|url> [--export-format pdf|md|docx|csv|...] \
+  [--output FILE] [--output-dir DIR]
+```
+
+### gwcli drive list / search
+
+Paginated, all drives. `--limit 0` = no cap.
+
+```bash
+gwcli drive list [--query "<raw Drive q>"] [--folder <id>] [--limit N]
+gwcli drive search <term> [--limit N]
+```
+
+### gwcli drive upload
+
+Upload one or more paths, a shell glob, or a directory (recursed and
+mirrored into Drive with idempotent folder creation).
+
+**Flags:**
+- `--folder <id|url>` - destination folder
+- `--name <name>` - rename (single file only)
+- `--convert` - convert to native Google type by extension (csv/tsv/xls*→Sheet, txt/md/doc*/html→Doc, ppt*→Slides)
+- `--upsert` - replace an existing same-name file in the destination instead of creating a duplicate (idempotent reruns)
+
+```bash
+gwcli drive upload ./report.pdf --folder <id> --name "Q3.pdf"
+gwcli drive upload *.csv --folder <id> --convert
+gwcli drive upload ./dir --folder <id>
+gwcli drive upload ./catalog.csv --folder <id> --upsert
+```
+
+### gwcli drive update
+
+Replace an existing file's content (optionally rename).
+
+```bash
+gwcli drive update <file-id|url> ./local-file [--name "New Name"]
+```
+
+### gwcli drive mkdir
+
+Create a folder. **Idempotent by default**: reuses an existing non-trashed
+folder of the same name in the same parent.
+
+```bash
+gwcli drive mkdir <name> [--folder <parent-id|url>] [--no-dedupe]
+```
+
+### gwcli drive mv / rename / cp
+
+```bash
+gwcli drive mv <file-id|url> --folder <dest-id|url>    # reparent
+gwcli drive rename <file-id|url> "New Name"            # name only
+gwcli drive cp <file-id|url> [--name "Copy"] [--folder <dest>]
+```
+
+### gwcli drive rm
+
+Trash (reversible) by default; `--permanent` is irreversible. `--force`
+required (non-interactive).
+
+```bash
+gwcli drive rm <file-id|url> --force [--permanent]
+```
+
+### gwcli drive share
+
+Grant a permission. `--type` user/group needs `--email`; domain needs
+`--domain`; `anyone` needs neither. `--message` only sent with `--notify`.
+`--role owner` + `--type user` transfers ownership.
+
+```bash
+gwcli drive share <file-id|url> --email user@x.com --role writer --notify
+gwcli drive share <file-id|url> --type anyone --role reader
+```
+
+### gwcli drive link
+
+Enable anyone-with-link (at `--role`, default reader) and print the
+shareable `webViewLink`. `--no-anyone` skips the permission change.
+
+```bash
+gwcli drive link <file-id|url> [--role reader|commenter|writer] [--no-anyone]
+```
+
+### gwcli drive permissions
+
+List who can access a file (audit before sharing internal notes).
+
+```bash
+gwcli drive permissions <file-id|url> [--json]
+```
+
+### Drive workflow example
+
+```bash
+# Assemble + hand over a deliverable, capturing IDs from JSON
+fid=$(gwcli drive mkdir "Intern Package" --json | jq -r .id)
+gwcli drive upload ./package/*.csv --folder "$fid" --convert --upsert
+gwcli drive share "$fid" --email intern@example.com --role reader --notify
+gwcli drive link "$fid"
+```
+
 ## Filters Commands
 
 Gmail filters are managed directly via the Gmail API (no config file).

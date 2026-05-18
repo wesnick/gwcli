@@ -91,7 +91,8 @@ The `CmdG` struct is the central object passed to all command handlers.
 - **`format.go`** - Email formatting (markdown, HTML, plain text with YAML frontmatter)
 - **`drive_artifacts.go`** - Detect Google Drive docs/files linked from email bodies (Gemini/Meet artifact chips)
 - **`artifacts.go`** - `artifacts list`/`artifacts download` commands (export/download detected Drive artifacts)
-- **`drive.go`** - `drive get`/`drive export` commands (general Drive file access by ID or URL, not email-specific)
+- **`drive.go`** - `drive get`/`drive export`/`list`/`search`/`update` commands (general Drive file access by ID or URL, not email-specific; includes recursive folder export)
+- **`drive_write.go`** - Drive write/organize verbs: `mkdir`/`mv`/`rename`/`cp`/`rm`/`share`/`link`/`permissions` and the upload engine (multi-path, recursive, `--convert`, `--upsert`); shared `writeDriveFile` composable-JSON helper and idempotent `ensureDriveFolder`
 - **`tasklists.go`** - Task list operations (list, create, delete)
 - **`tasks.go`** - Task operations (list, read, create, complete, delete)
 
@@ -381,7 +382,28 @@ gwcli drive search "quarterly plan"
 
 # Write ops (full drive scope, unblocked since #40 took the full scope)
 gwcli drive upload ./report.pdf --folder <folder-id> --name "Q3 Report.pdf"
+gwcli drive upload *.csv --folder <folder-id> --convert       # CSV->Sheet, MD->Doc, ...
+gwcli drive upload ./package-dir --folder <folder-id>          # recurses, mirrors structure
+gwcli drive upload ./01-catalog.csv --folder <folder-id> --upsert  # idempotent rerun
 gwcli drive update <file-id|url> ./report.pdf --name "Q3 Report (final).pdf"
+
+# Organize: folders + move turn a pile of files into a deliverable
+gwcli drive mkdir "Intern Package" --folder <parent-id|url>    # reuses same-name folder by default
+gwcli drive mkdir "Intern Package" --no-dedupe                 # force a fresh folder
+gwcli drive mv <file-id|url> --folder <folder-id|url>          # reparent
+gwcli drive rename <file-id|url> "New Name"                    # name only, content untouched
+gwcli drive cp <file-id|url> --name "Copy" --folder <dest>     # template instantiation
+
+# Delete / undo a bad upload (--force required; trash is reversible)
+gwcli drive rm <file-id|url> --force                           # -> trash
+gwcli drive rm <file-id|url> --force --permanent               # irreversible
+
+# Share / link / audit
+gwcli drive share <file-id|url> --email intern@example.com --role writer --notify
+gwcli drive share <file-id|url> --type anyone --role reader
+gwcli drive link <file-id|url>                                 # enables anyone-with-link, prints URL
+gwcli drive link <file-id|url> --no-anyone                     # just print existing webViewLink
+gwcli drive permissions <file-id|url>                          # audit who can access
 ```
 
 `drive export` reuses `fetchDriveArtifact` (same native-export vs.
@@ -403,6 +425,54 @@ takes a raw Drive `q` expression plus an optional `--folder` (adds a
 `--limit` cap (0 = no cap). `drive upload`/`drive update` are `Files.Create`/
 `Files.Update` media uploads (write ops are intentionally unblocked because
 #40 took the full `drive` scope, not `drive.readonly`).
+
+**Write/organize verbs** (`drive_write.go`). The shared `writeDriveFile`
+helper makes every write composable: `--json` always returns
+`id`/`name`/`mimeType`/`size`/`webViewLink`/`parents` so the next step
+(share, move, link) can chain without a search round-trip. `driveWriteFields`
+is the field mask requested on every write call.
+
+- `drive mkdir <name> [--folder <parent>] [--no-dedupe]` — `Files.Create`
+  with `mimeType=application/vnd.google-apps.folder`. **Idempotent by
+  default**: an existing non-trashed folder of the same name in the same
+  parent is reused (`ensureDriveFolder` → `findDriveChildByName`); pass
+  `--no-dedupe` to force a new folder. `--folder` accepts an ID or URL.
+- `drive mv <file> --folder <dest>` — `Files.Update` with
+  `addParents=<dest>` / `removeParents=<current parents>` (current parents
+  read first via `Files.Get`).
+- `drive rename <file> <name>` — `Files.Update` name only (no media).
+- `drive cp <file> [--name] [--folder]` — `Files.Copy` (template
+  instantiation).
+- `drive rm <file> --force [--permanent]` — trash via
+  `Files.Update(Trashed:true)` (reversible) by default; `--permanent` is
+  `Files.Delete` (irreversible). **`--force` is required** (non-interactive
+  rule #3).
+- `drive share <file> --type --role [--email|--domain] [--notify]
+  [--message]` — `Permissions.Create`. `--type` user/group needs `--email`,
+  domain needs `--domain`, `anyone` needs no principal. `role=owner` with
+  `type=user` sets `TransferOwnership(true)`. `--message` only sent when
+  `--notify`.
+- `drive link <file> [--role] [--no-anyone]` — ensures an
+  `anyone`/`<role>` permission then prints `webViewLink` (paste into an
+  email/message). `--no-anyone` skips the permission change and just prints
+  the existing link.
+- `drive permissions <file>` — paginated `Permissions.List` (audit who can
+  see a doc before sharing internal notes).
+
+**Idempotency / safe reruns.** `drive upload` takes one or more paths (shell
+globs like `*.csv` expand to multiple args) and directories. A directory is
+walked recursively and mirrored into Drive, creating folders via the same
+idempotent `ensureDriveFolder`. `--convert` converts by local extension to
+the native Google type (`driveConvertByExt`: csv/tsv/xls*→Sheet,
+txt/md/doc*/html→Doc, ppt*→Slides). `--upsert` replaces an existing
+same-name file in the destination (via `findDriveChildByName` →
+`Files.Update` media) instead of creating `name (1)`, `name (2)` on every
+rerun. `--name` is single-file only.
+
+**Folder export.** `drive export <folder>` recurses the folder tree
+(`exportDriveFolder`), exporting every file into a local directory mirroring
+the Drive structure (native docs honor `--export-format`; binaries are
+blob-downloaded). Single-file export behavior is unchanged.
 
 **Export size cap:** Google Docs/Sheets/Slides `Files.Export` has a ~10 MB
 limit. `wrapDriveExportErr` (`artifacts.go`) detects the

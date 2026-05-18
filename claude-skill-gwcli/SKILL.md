@@ -17,11 +17,12 @@ gwcli provides these main resource types:
 2. **Labels** - List labels, apply/remove labels to messages
 3. **Attachments** - List and download email attachments
 4. **Drive Artifacts** - List and export/download Google Drive docs linked in email bodies (e.g. Gemini/Meet "Notes by Gemini")
-5. **Filters** - List, get, create, and delete Gmail filters directly
-6. **Task Lists** - List, create, and delete Google Task lists
-7. **Tasks** - List, create, read, complete, and delete tasks
-8. **Calendars** - List accessible Google Calendars
-9. **Events** - List, create, read, update, delete, search, and import calendar events
+5. **Drive Files** - General Drive access by file ID or URL: get/export/list/search, plus write/organize verbs (upload, mkdir, mv, rename, cp, rm, share, link, permissions)
+6. **Filters** - List, get, create, and delete Gmail filters directly
+7. **Task Lists** - List, create, and delete Google Task lists
+8. **Tasks** - List, create, read, complete, and delete tasks
+9. **Calendars** - List accessible Google Calendars
+10. **Events** - List, create, read, update, delete, search, and import calendar events
 
 ## When to Use This Skill
 
@@ -380,6 +381,84 @@ gwcli artifacts download <message-id> --filename "Notes*" --output-dir ./notes
   for the service account's numeric Client ID. If it's missing, gwcli
   prints an actionable error explaining exactly how to fix it.
   `artifacts list` does not need this scope.
+
+### Drive Files (general, not email-specific)
+
+The `drive` command group works on **any** Drive file by file ID **or**
+Drive/Docs URL — no email involved. All of it needs the full
+`https://www.googleapis.com/auth/drive` scope (same scope/consent note as
+`artifacts download` above).
+
+**Read / fetch:**
+```bash
+# Metadata only (no download): id, name, mimeType, size, modifiedTime, owners
+gwcli drive get <file-id|url>
+gwcli drive get https://docs.google.com/document/d/<id>/edit --json
+
+# Export (native docs) or download (binary). Docs->.md, Sheets->.csv,
+# Slides/unknown->PDF, Drawings->PNG; --export-format overrides per-type default
+gwcli drive export <file-id|url> --output notes.md
+gwcli drive export <file-id|url> --export-format pdf --output-dir ./out
+gwcli drive export <folder-id|url> --output-dir ./out   # recurses, mirrors tree
+
+# List / search (paginated, all drives; --limit 0 = no cap)
+gwcli drive list --query "mimeType='application/pdf'" --limit 50
+gwcli drive list --folder <folder-id>
+gwcli drive search "quarterly plan"
+```
+
+**Write / organize** (every write prints `id` + `webViewLink` in `--json`,
+so the next step can chain without a lookup):
+```bash
+# Upload: one or many paths, a glob, or a directory (recursed + mirrored)
+gwcli drive upload ./report.pdf --folder <folder-id> --name "Q3 Report.pdf"
+gwcli drive upload *.csv --folder <folder-id> --convert      # CSV->Sheet, MD->Doc...
+gwcli drive upload ./package-dir --folder <folder-id>        # recurses with mkdir
+gwcli drive upload ./01-catalog.csv --folder <folder-id> --upsert  # safe rerun
+gwcli drive update <file-id|url> ./report.pdf --name "Q3 Report (final).pdf"
+
+# Folders + move turn a pile of files into a deliverable
+gwcli drive mkdir "Intern Package" --folder <parent-id|url>  # reuses same-name folder
+gwcli drive mkdir "Intern Package" --no-dedupe               # force a fresh folder
+gwcli drive mv <file-id|url> --folder <folder-id|url>        # reparent
+gwcli drive rename <file-id|url> "New Name"                  # name only
+gwcli drive cp <file-id|url> --name "Copy" --folder <dest>   # clone a template
+
+# Delete / undo (--force required; trash is reversible)
+gwcli drive rm <file-id|url> --force                         # -> trash
+gwcli drive rm <file-id|url> --force --permanent             # irreversible
+
+# Share / link / audit
+gwcli drive share <file-id|url> --email intern@example.com --role writer --notify
+gwcli drive share <file-id|url> --type anyone --role reader
+gwcli drive link <file-id|url>                               # anyone-with-link + prints URL
+gwcli drive link <file-id|url> --no-anyone                   # just print existing link
+gwcli drive permissions <file-id|url>                        # who can access (audit)
+```
+
+**Important notes:**
+- **Idempotent by default for safe agent reruns.** `drive mkdir` reuses an
+  existing non-trashed folder of the same name in the same parent (pass
+  `--no-dedupe` to force a new one). `drive upload --upsert` replaces an
+  existing same-name file in the destination instead of creating
+  `name (1)`, `name (2)`. Prefer these over plain `upload` when a task may
+  be retried.
+- **Composable output.** Every write verb's `--json` returns
+  `id`/`name`/`mimeType`/`size`/`webViewLink`/`parents`. Capture `id` from
+  an upload/mkdir and feed it straight into `mv`/`share`/`link` — no search
+  round-trip needed.
+- `drive share --type`: `user`/`group` need `--email`, `domain` needs
+  `--domain`, `anyone` needs neither. `--message` is only sent with
+  `--notify`. `--role owner` + `--type user` transfers ownership.
+- `drive link` prints a pasteable `webViewLink`; by default it first grants
+  anyone-with-link at `--role` (default reader). `--no-anyone` skips that
+  and just prints the current link.
+- `drive rm` requires `--force` (non-interactive). Default is trash
+  (recoverable); `--permanent` is irreversible.
+- `--convert` maps by local extension (csv/tsv/xls*→Sheet,
+  txt/md/doc*/html→Doc, ppt*→Slides); other extensions upload as-is.
+- A bad upload is undone with `drive rm <id> --force`; combine with the
+  `id` from the upload's JSON for a clean rollback.
 
 ### Google Tasks
 

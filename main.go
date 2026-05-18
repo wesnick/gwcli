@@ -196,16 +196,66 @@ type CLI struct {
 		} `cmd:"" help:"Search Drive files by name/content"`
 
 		Upload struct {
-			Path   string `arg:"" required:"" name:"path" type:"existingfile" help:"Local file to upload"`
-			Folder string `name:"folder" help:"Destination folder ID"`
-			Name   string `name:"name" help:"Override the uploaded file name"`
-		} `cmd:"" help:"Upload a local file to Drive"`
+			Paths   []string `arg:"" required:"" name:"path" help:"Local file(s) or directory to upload"`
+			Folder  string   `name:"folder" help:"Destination folder ID or URL"`
+			Name    string   `name:"name" help:"Override the uploaded file name (single file only)"`
+			Convert bool     `name:"convert" help:"Convert to the native Google-apps type by extension (csv->Sheet, md->Doc, ...)"`
+			Upsert  bool     `name:"upsert" help:"Replace an existing same-name file in the destination instead of creating a duplicate"`
+		} `cmd:"" help:"Upload local file(s)/directory to Drive"`
 
 		Update struct {
 			Ref  string `arg:"" required:"" name:"file" help:"Drive file ID or Drive/Docs URL"`
 			Path string `arg:"" required:"" name:"path" type:"existingfile" help:"Local file with new content"`
 			Name string `name:"name" help:"Also rename the file"`
 		} `cmd:"" help:"Replace an existing Drive file's content"`
+
+		Mkdir struct {
+			Name     string `arg:"" required:"" name:"name" help:"Folder name to create"`
+			Folder   string `name:"folder" help:"Parent folder ID or URL (default: My Drive root)"`
+			NoDedupe bool   `name:"no-dedupe" help:"Always create a new folder even if one with this name already exists in the parent"`
+		} `cmd:"" help:"Create a Drive folder (reuses an existing same-name folder by default)"`
+
+		Mv struct {
+			Ref    string `arg:"" required:"" name:"file" help:"Drive file ID or URL to move"`
+			Folder string `name:"folder" required:"" help:"Destination folder ID or URL"`
+		} `cmd:"" help:"Move (reparent) a Drive file into a folder"`
+
+		Rename struct {
+			Ref  string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
+			Name string `arg:"" required:"" name:"name" help:"New name"`
+		} `cmd:"" help:"Rename a Drive file (content untouched)"`
+
+		Cp struct {
+			Ref    string `arg:"" required:"" name:"file" help:"Drive file ID or URL to copy"`
+			Name   string `name:"name" help:"Name for the copy"`
+			Folder string `name:"folder" help:"Destination folder ID or URL"`
+		} `cmd:"" help:"Copy a Drive file (template instantiation)"`
+
+		Rm struct {
+			Ref       string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
+			Permanent bool   `name:"permanent" help:"Skip the trash and delete irreversibly"`
+			Force     bool   `name:"force" short:"f" help:"Confirm deletion"`
+		} `cmd:"" help:"Trash (default) or permanently delete a Drive file"`
+
+		Share struct {
+			Ref     string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
+			Type    string `name:"type" default:"user" help:"Principal type: user, group, domain, anyone"`
+			Role    string `name:"role" default:"reader" help:"Role: reader, commenter, writer, owner"`
+			Email   string `name:"email" help:"Email address (for type user/group)"`
+			Domain  string `name:"domain" help:"Domain name (for type domain)"`
+			Notify  bool   `name:"notify" help:"Send a notification email"`
+			Message string `name:"message" help:"Message included in the notification email"`
+		} `cmd:"" help:"Grant a permission on a Drive file"`
+
+		Link struct {
+			Ref      string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
+			Role     string `name:"role" default:"reader" help:"Link-sharing role: reader, commenter, writer"`
+			NoAnyone bool   `name:"no-anyone" help:"Don't change sharing; just print the existing link"`
+		} `cmd:"" help:"Get a shareable link (enables anyone-with-link by default)"`
+
+		Permissions struct {
+			Ref string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
+		} `cmd:"" help:"List who can access a Drive file"`
 	} `cmd:"" help:"Google Drive operations"`
 
 	Filters struct {
@@ -649,8 +699,9 @@ func main() {
 			out.writeError(err)
 			os.Exit(3)
 		}
-		if err := runDriveUpload(cmdCtx, conn, cli.Drive.Upload.Path,
-			cli.Drive.Upload.Folder, cli.Drive.Upload.Name, out); err != nil {
+		if err := runDriveUpload(cmdCtx, conn, cli.Drive.Upload.Paths,
+			cli.Drive.Upload.Folder, cli.Drive.Upload.Name,
+			cli.Drive.Upload.Convert, cli.Drive.Upload.Upsert, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
@@ -664,6 +715,114 @@ func main() {
 		}
 		if err := runDriveUpdate(cmdCtx, conn, cli.Drive.Update.Ref,
 			cli.Drive.Update.Path, cli.Drive.Update.Name, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive mkdir <name>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveMkdir(cmdCtx, conn, cli.Drive.Mkdir.Name,
+			cli.Drive.Mkdir.Folder, cli.Drive.Mkdir.NoDedupe, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive mv <file>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveMove(cmdCtx, conn, cli.Drive.Mv.Ref,
+			cli.Drive.Mv.Folder, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive rename <file> <name>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveRename(cmdCtx, conn, cli.Drive.Rename.Ref,
+			cli.Drive.Rename.Name, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive cp <file>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveCopy(cmdCtx, conn, cli.Drive.Cp.Ref,
+			cli.Drive.Cp.Name, cli.Drive.Cp.Folder, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive rm <file>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveRm(cmdCtx, conn, cli.Drive.Rm.Ref,
+			cli.Drive.Rm.Permanent, cli.Drive.Rm.Force, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive share <file>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		principal := cli.Drive.Share.Email
+		if cli.Drive.Share.Type == "domain" {
+			principal = cli.Drive.Share.Domain
+		}
+		if err := runDriveShare(cmdCtx, conn, cli.Drive.Share.Ref,
+			cli.Drive.Share.Type, cli.Drive.Share.Role, principal,
+			cli.Drive.Share.Message, cli.Drive.Share.Notify, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive link <file>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveLink(cmdCtx, conn, cli.Drive.Link.Ref,
+			cli.Drive.Link.Role, cli.Drive.Link.NoAnyone, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive permissions <file>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDrivePermissions(cmdCtx, conn, cli.Drive.Permissions.Ref, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
