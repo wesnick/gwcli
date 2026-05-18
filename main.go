@@ -14,17 +14,43 @@ import (
 var version = "dev"
 
 func init() {
-	// If version is still "dev" (not set via ldflags), try to get it from build info.
-	// This works when the binary is installed via "go install github.com/...@version".
-	if version == "dev" {
-		if info, ok := debug.ReadBuildInfo(); ok {
-			v := info.Main.Version
-			// Only use the version if it's a clean semver tag (e.g., "v1.2.3").
-			// Ignore "(devel)" and pseudo-versions like "v0.0.0-20210101..." which
-			// indicate local builds or builds from non-tagged commits.
-			if v != "" && v != "(devel)" && !strings.Contains(v, "-0.") {
-				version = v
-			}
+	// If version was set via ldflags (release builds), keep it as-is.
+	if version != "dev" {
+		return
+	}
+
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+
+	// Tagged install: "go install github.com/...@v1.2.3" embeds the tag here.
+	// Only accept a clean semver tag (e.g., "v1.2.3"). Ignore "(devel)" and
+	// pseudo-versions like "v0.0.0-20210101..." which indicate local builds
+	// or builds from non-tagged commits.
+	if v := info.Main.Version; v != "" && v != "(devel)" && !strings.Contains(v, "-0.") {
+		version = v
+		return
+	}
+
+	// Untagged/dev build: fall back to the VCS commit hash embedded by
+	// "go build" when run inside a git checkout.
+	var rev, modified string
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			modified = s.Value
+		}
+	}
+	if rev != "" {
+		if len(rev) > 12 {
+			rev = rev[:12]
+		}
+		version = rev
+		if modified == "true" {
+			version += "-dirty"
 		}
 	}
 }
@@ -35,6 +61,8 @@ type CLI struct {
 	JSON    bool   `help:"JSON output format"`
 	Verbose bool   `help:"Verbose logging"`
 	NoColor bool   `help:"Disable colored output"`
+
+	VersionFlag kong.VersionFlag `name:"version" short:"V" help:"Print version and exit"`
 
 	Configure struct{} `cmd:"" help:"Configure OAuth authentication"`
 	Version   struct{} `cmd:"" help:"Show version"`
@@ -333,6 +361,7 @@ func main() {
 		kong.ConfigureHelp(kong.HelpOptions{
 			Compact: true,
 		}),
+		kong.Vars{"version": version},
 	)
 
 	out := newOutputWriter(cli.JSON, cli.NoColor, cli.Verbose)
