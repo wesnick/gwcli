@@ -91,6 +91,39 @@ func runDriveExport(ctx context.Context, conn *gwcli.CmdG, ref, exportFormat, ou
 		return err
 	}
 
+	svc, err := driveSvc(conn)
+	if err != nil {
+		return err
+	}
+	meta, err := svc.Files.Get(art.ID).
+		Fields("id,name,mimeType").
+		SupportsAllDrives(true).
+		Context(ctx).
+		Do()
+	if err != nil {
+		return wrapDriveErr(err)
+	}
+	if meta.MimeType == driveFolderMime {
+		dest := expandPath(outputDir)
+		if outputFile != "" {
+			dest = expandPath(outputFile)
+		}
+		root := filepath.Join(dest, sanitizeFilename(meta.Name))
+		count, err := exportDriveFolder(ctx, conn, svc, art.ID, root, exportFormat)
+		if err != nil {
+			return err
+		}
+		if out.json {
+			return out.writeJSON(map[string]interface{}{
+				"id":    art.ID,
+				"dir":   root,
+				"files": count,
+			})
+		}
+		out.writeMessage(fmt.Sprintf("Exported %d file(s) to %s", count, root))
+		return nil
+	}
+
 	data, filename, err := fetchDriveArtifactFormat(ctx, conn, art, exportFormat)
 	if err != nil {
 		return fmt.Errorf("failed to export Drive file %q: %w", art.ID, err)
@@ -120,6 +153,61 @@ func runDriveExport(ctx context.Context, conn *gwcli.CmdG, ref, exportFormat, ou
 	}
 	out.writeMessage(fmt.Sprintf("Exported: %s (%s)", outputPath, formatSize(int64(len(data)))))
 	return nil
+}
+
+// exportDriveFolder recursively exports every file under folderID into the
+// local directory dir (created mirroring the Drive folder tree). Native docs
+// use exportFormat (or their per-type default); binary files are downloaded
+// as-is. Returns the number of files written.
+func exportDriveFolder(ctx context.Context, conn *gwcli.CmdG, svc *drive.Service, folderID, dir, exportFormat string) (int, error) {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return 0, fmt.Errorf("failed to create %s: %w", dir, err)
+	}
+	count := 0
+	pageToken := ""
+	for {
+		call := svc.Files.List().
+			Q(fmt.Sprintf("'%s' in parents and trashed = false", driveQuoteValue(folderID))).
+			Fields("nextPageToken, files(id,name,mimeType)").
+			SupportsAllDrives(true).
+			IncludeItemsFromAllDrives(true).
+			Corpora("allDrives").
+			PageSize(100).
+			Context(ctx)
+		if pageToken != "" {
+			call = call.PageToken(pageToken)
+		}
+		resp, err := call.Do()
+		if err != nil {
+			return count, wrapDriveErr(err)
+		}
+		for _, f := range resp.Files {
+			if f.MimeType == driveFolderMime {
+				sub := filepath.Join(dir, sanitizeFilename(f.Name))
+				n, err := exportDriveFolder(ctx, conn, svc, f.Id, sub, exportFormat)
+				if err != nil {
+					return count, err
+				}
+				count += n
+				continue
+			}
+			art := driveArtifact{ID: f.Id, Title: f.Name}
+			data, filename, err := fetchDriveArtifactFormat(ctx, conn, art, exportFormat)
+			if err != nil {
+				return count, fmt.Errorf("failed to export %q: %w", f.Name, err)
+			}
+			outPath := findAvailableFilename(dir, filename)
+			if err := os.WriteFile(outPath, data, 0644); err != nil {
+				return count, fmt.Errorf("failed to write %s: %w", outPath, err)
+			}
+			count++
+		}
+		pageToken = resp.NextPageToken
+		if pageToken == "" {
+			break
+		}
+	}
+	return count, nil
 }
 
 // driveListFile is the trimmed metadata shape emitted by list/search.
@@ -231,51 +319,6 @@ func runDriveSearch(ctx context.Context, conn *gwcli.CmdG, term string, limit in
 	return writeDriveList(files, out)
 }
 
-// runDriveUpload uploads a local file to Drive as a new file. folder, when
-// set, places it under that parent folder ID; name overrides the basename.
-func runDriveUpload(ctx context.Context, conn *gwcli.CmdG, path, folder, name string, out *outputWriter) error {
-	svc := conn.DriveService()
-	if svc == nil {
-		return fmt.Errorf("Drive service is not available for this connection. %s", driveScopeHelp)
-	}
-
-	f, err := os.Open(expandPath(path))
-	if err != nil {
-		return fmt.Errorf("failed to open %s: %w", path, err)
-	}
-	defer f.Close()
-
-	meta := &drive.File{Name: name}
-	if meta.Name == "" {
-		meta.Name = filepath.Base(path)
-	}
-	if folder != "" {
-		meta.Parents = []string{folder}
-	}
-
-	created, err := svc.Files.Create(meta).
-		Media(f).
-		SupportsAllDrives(true).
-		Fields("id,name,mimeType,size,webViewLink").
-		Context(ctx).
-		Do()
-	if err != nil {
-		return wrapDriveErr(err)
-	}
-
-	if out.json {
-		return out.writeJSON(map[string]interface{}{
-			"id":          created.Id,
-			"name":        created.Name,
-			"mimeType":    created.MimeType,
-			"size":        created.Size,
-			"webViewLink": created.WebViewLink,
-		})
-	}
-	out.writeMessage(fmt.Sprintf("Uploaded: %s (id %s)", created.Name, created.Id))
-	return nil
-}
-
 // runDriveUpdate replaces the content of an existing Drive file with a local
 // file. name, when set, also renames the file.
 func runDriveUpdate(ctx context.Context, conn *gwcli.CmdG, ref, path, name string, out *outputWriter) error {
@@ -284,9 +327,9 @@ func runDriveUpdate(ctx context.Context, conn *gwcli.CmdG, ref, path, name strin
 		return err
 	}
 
-	svc := conn.DriveService()
-	if svc == nil {
-		return fmt.Errorf("Drive service is not available for this connection. %s", driveScopeHelp)
+	svc, err := driveSvc(conn)
+	if err != nil {
+		return err
 	}
 
 	f, err := os.Open(expandPath(path))
@@ -303,22 +346,11 @@ func runDriveUpdate(ctx context.Context, conn *gwcli.CmdG, ref, path, name strin
 	updated, err := svc.Files.Update(art.ID, meta).
 		Media(f).
 		SupportsAllDrives(true).
-		Fields("id,name,mimeType,size,webViewLink").
+		Fields(driveWriteFields).
 		Context(ctx).
 		Do()
 	if err != nil {
 		return wrapDriveErr(err)
 	}
-
-	if out.json {
-		return out.writeJSON(map[string]interface{}{
-			"id":          updated.Id,
-			"name":        updated.Name,
-			"mimeType":    updated.MimeType,
-			"size":        updated.Size,
-			"webViewLink": updated.WebViewLink,
-		})
-	}
-	out.writeMessage(fmt.Sprintf("Updated: %s (id %s)", updated.Name, updated.Id))
-	return nil
+	return writeDriveFile("Updated", updated, out)
 }
