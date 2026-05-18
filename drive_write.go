@@ -9,6 +9,7 @@ import (
 
 	"github.com/wesnick/gwcli/pkg/gwcli"
 	drive "google.golang.org/api/drive/v3"
+	"google.golang.org/api/googleapi"
 )
 
 // driveFolderMime is the well-known mimeType Google Drive uses for folders.
@@ -39,6 +40,71 @@ var driveConvertByExt = map[string]string{
 	".ppt":  "application/vnd.google-apps.presentation",
 	".pptx": "application/vnd.google-apps.presentation",
 	".odp":  "application/vnd.google-apps.presentation",
+}
+
+// driveSourceMimeByExt maps a local file extension to the *source* content
+// type to declare on the media upload. Drive's import converter keys the
+// conversion off the uploaded media's MIME type, not the target metadata
+// mimeType — so without this a .csv is content-sniffed as text/plain and
+// imported as a Doc even when the target is google-apps.spreadsheet.
+var driveSourceMimeByExt = map[string]string{
+	".csv":  "text/csv",
+	".tsv":  "text/tab-separated-values",
+	".xls":  "application/vnd.ms-excel",
+	".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	".ods":  "application/vnd.oasis.opendocument.spreadsheet",
+	".txt":  "text/plain",
+	".md":   "text/markdown",
+	".rtf":  "application/rtf",
+	".doc":  "application/msword",
+	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	".odt":  "application/vnd.oasis.opendocument.text",
+	".html": "text/html",
+	".htm":  "text/html",
+	".ppt":  "application/vnd.ms-powerpoint",
+	".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	".odp":  "application/vnd.oasis.opendocument.presentation",
+	".json": "application/json",
+}
+
+// driveAsAliases maps the friendly --as values to native Google-apps
+// mimeTypes. A raw "application/vnd.google-apps.*" value is also accepted
+// verbatim by resolveDriveTargetMime.
+var driveAsAliases = map[string]string{
+	"doc":          "application/vnd.google-apps.document",
+	"document":     "application/vnd.google-apps.document",
+	"sheet":        "application/vnd.google-apps.spreadsheet",
+	"spreadsheet":  "application/vnd.google-apps.spreadsheet",
+	"slides":       "application/vnd.google-apps.presentation",
+	"presentation": "application/vnd.google-apps.presentation",
+	"drawing":      "application/vnd.google-apps.drawing",
+	"form":         "application/vnd.google-apps.form",
+}
+
+// resolveDriveTargetMime turns an --as value into a native Google-apps
+// mimeType. It accepts a friendly alias (doc/sheet/slides/...) or a raw
+// "application/vnd.google-apps.*" type. Empty input yields "" (no override).
+func resolveDriveTargetMime(as string) (string, error) {
+	as = strings.TrimSpace(as)
+	if as == "" {
+		return "", nil
+	}
+	if m, ok := driveAsAliases[strings.ToLower(as)]; ok {
+		return m, nil
+	}
+	if strings.HasPrefix(as, "application/vnd.google-apps.") {
+		return as, nil
+	}
+	return "", fmt.Errorf("unknown --as value %q (use doc, sheet, slides, drawing, form, or a raw application/vnd.google-apps.* type)", as)
+}
+
+// driveMediaOption returns the explicit source-content-type media option for
+// localPath, or nil when the extension is unknown (let the library sniff).
+func driveMediaOption(localPath string) googleapi.MediaOption {
+	if m, ok := driveSourceMimeByExt[strings.ToLower(filepath.Ext(localPath))]; ok {
+		return googleapi.ContentType(m)
+	}
+	return nil
 }
 
 // driveQuoteValue escapes a value for embedding inside a single-quoted Drive
@@ -473,7 +539,7 @@ func runDrivePermissions(ctx context.Context, conn *gwcli.CmdG, ref string, out 
 // uploadOneFile uploads a single local file into parent. With convert it is
 // converted to the native Google-apps type for its extension; with upsert an
 // existing same-name file in the parent is replaced instead of duplicated.
-func uploadOneFile(ctx context.Context, svc *drive.Service, localPath, parent, name string, convert, upsert bool) (*drive.File, error) {
+func uploadOneFile(ctx context.Context, svc *drive.Service, localPath, parent, name string, convert, upsert bool, targetMimeOverride string) (*drive.File, error) {
 	fh, err := os.Open(localPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open %s: %w", localPath, err)
@@ -484,10 +550,18 @@ func uploadOneFile(ctx context.Context, svc *drive.Service, localPath, parent, n
 		name = filepath.Base(localPath)
 	}
 	targetMime := ""
-	if convert {
+	switch {
+	case targetMimeOverride != "":
+		targetMime = targetMimeOverride
+	case convert:
 		if m, ok := driveConvertByExt[strings.ToLower(filepath.Ext(localPath))]; ok {
 			targetMime = m
 		}
+	}
+
+	var mediaOpts []googleapi.MediaOption
+	if opt := driveMediaOption(localPath); opt != nil {
+		mediaOpts = append(mediaOpts, opt)
 	}
 
 	if upsert {
@@ -501,7 +575,7 @@ func uploadOneFile(ctx context.Context, svc *drive.Service, localPath, parent, n
 				meta.MimeType = targetMime
 			}
 			updated, err := svc.Files.Update(existing.Id, meta).
-				Media(fh).
+				Media(fh, mediaOpts...).
 				SupportsAllDrives(true).
 				Fields(driveWriteFields).
 				Context(ctx).
@@ -521,7 +595,7 @@ func uploadOneFile(ctx context.Context, svc *drive.Service, localPath, parent, n
 		meta.MimeType = targetMime
 	}
 	created, err := svc.Files.Create(meta).
-		Media(fh).
+		Media(fh, mediaOpts...).
 		SupportsAllDrives(true).
 		Fields(driveWriteFields).
 		Context(ctx).
@@ -535,7 +609,7 @@ func uploadOneFile(ctx context.Context, svc *drive.Service, localPath, parent, n
 // uploadTree walks a local directory, mirroring its structure into Drive
 // (folders created idempotently) and uploading every file. Returns the
 // uploaded/updated files.
-func uploadTree(ctx context.Context, svc *drive.Service, root, parent string, convert, upsert bool) ([]*drive.File, error) {
+func uploadTree(ctx context.Context, svc *drive.Service, root, parent string, convert, upsert bool, targetMimeOverride string) ([]*drive.File, error) {
 	// dirFolderID caches the Drive folder ID for each local directory so a
 	// folder is only created/looked-up once.
 	dirFolderID := map[string]string{}
@@ -565,7 +639,7 @@ func uploadTree(ctx context.Context, svc *drive.Service, root, parent string, co
 			return nil
 		}
 		parentID := dirFolderID[filepath.Clean(filepath.Dir(path))]
-		f, err := uploadOneFile(ctx, svc, path, parentID, "", convert, upsert)
+		f, err := uploadOneFile(ctx, svc, path, parentID, "", convert, upsert, targetMimeOverride)
 		if err != nil {
 			return err
 		}
@@ -582,8 +656,12 @@ func uploadTree(ctx context.Context, svc *drive.Service, root, parent string, co
 // Directories are mirrored recursively; --convert converts by extension;
 // --upsert replaces an existing same-name file in the destination instead of
 // creating a duplicate (idempotent reruns).
-func runDriveUpload(ctx context.Context, conn *gwcli.CmdG, paths []string, folderRef, name string, convert, upsert bool, out *outputWriter) error {
+func runDriveUpload(ctx context.Context, conn *gwcli.CmdG, paths []string, folderRef, name string, convert, upsert bool, as string, out *outputWriter) error {
 	svc, err := driveSvc(conn)
+	if err != nil {
+		return err
+	}
+	targetMimeOverride, err := resolveDriveTargetMime(as)
 	if err != nil {
 		return err
 	}
@@ -610,14 +688,14 @@ func runDriveUpload(ctx context.Context, conn *gwcli.CmdG, paths []string, folde
 			if name != "" {
 				return fmt.Errorf("--name cannot be used when uploading a directory")
 			}
-			tree, err := uploadTree(ctx, svc, ep, parent, convert, upsert)
+			tree, err := uploadTree(ctx, svc, ep, parent, convert, upsert, targetMimeOverride)
 			if err != nil {
 				return err
 			}
 			results = append(results, tree...)
 			continue
 		}
-		f, err := uploadOneFile(ctx, svc, ep, parent, name, convert, upsert)
+		f, err := uploadOneFile(ctx, svc, ep, parent, name, convert, upsert, targetMimeOverride)
 		if err != nil {
 			return err
 		}

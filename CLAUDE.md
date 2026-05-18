@@ -383,6 +383,7 @@ gwcli drive search "quarterly plan"
 # Write ops (full drive scope, unblocked since #40 took the full scope)
 gwcli drive upload ./report.pdf --folder <folder-id> --name "Q3 Report.pdf"
 gwcli drive upload *.csv --folder <folder-id> --convert       # CSV->Sheet, MD->Doc, ...
+gwcli drive upload notes.txt --folder <folder-id> --as sheet  # force converted-to type
 gwcli drive upload ./package-dir --folder <folder-id>          # recurses, mirrors structure
 gwcli drive upload ./01-catalog.csv --folder <folder-id> --upsert  # idempotent rerun
 gwcli drive update <file-id|url> ./report.pdf --name "Q3 Report (final).pdf"
@@ -420,7 +421,9 @@ download content but still needs the Drive scope (`Files.Get` metadata).
 (`pdf`/`md`/`docx`/`xlsx`/`csv`/`png`/...) or a raw MIME type. `drive list`
 takes a raw Drive `q` expression plus an optional `--folder` (adds a
 `'<id>' in parents` clause); `drive search <term>` wraps a term into
-`name contains / fullText contains`. Both paginate via `Files.List` with
+`name contains / fullText contains`. Both default to `trashed = false`
+(trashed items otherwise leak into folder/search listings); a `--query`
+that explicitly mentions `trashed` keeps full control. Both paginate via `Files.List` with
 `SupportsAllDrives`/`IncludeItemsFromAllDrives`/`Corpora("allDrives")` and a
 `--limit` cap (0 = no cap). `drive upload`/`drive update` are `Files.Create`/
 `Files.Update` media uploads (write ops are intentionally unblocked because
@@ -464,10 +467,17 @@ globs like `*.csv` expand to multiple args) and directories. A directory is
 walked recursively and mirrored into Drive, creating folders via the same
 idempotent `ensureDriveFolder`. `--convert` converts by local extension to
 the native Google type (`driveConvertByExt`: csv/tsv/xls*→Sheet,
-txt/md/doc*/html→Doc, ppt*→Slides). `--upsert` replaces an existing
-same-name file in the destination (via `findDriveChildByName` →
-`Files.Update` media) instead of creating `name (1)`, `name (2)` on every
-rerun. `--name` is single-file only.
+txt/md/doc*/html→Doc, ppt*→Slides). `--as doc|sheet|slides|drawing|form`
+(or a raw `application/vnd.google-apps.*` type, `resolveDriveTargetMime`)
+forces the converted-to type, overriding extension inference, and implies
+conversion without `--convert`. Crucially, the upload always declares an
+explicit *source* content type by extension (`driveSourceMimeByExt` /
+`driveMediaOption`): Drive's import converter keys off the uploaded media's
+MIME, not the target metadata, so without this a `.csv` is content-sniffed
+as `text/plain` and lands as a Doc even with the spreadsheet target.
+`--upsert` replaces an existing same-name file in the destination (via
+`findDriveChildByName` → `Files.Update` media) instead of creating
+`name (1)`, `name (2)` on every rerun. `--name` is single-file only.
 
 **Folder export.** `drive export <folder>` recurses the folder tree
 (`exportDriveFolder`), exporting every file into a local directory mirroring
