@@ -27,6 +27,7 @@ func TestNewAuthenticatorScopes(t *testing.T) {
 		"https://www.googleapis.com/auth/gmail.labels":         false,
 		"https://www.googleapis.com/auth/tasks":                false,
 		"https://www.googleapis.com/auth/calendar":             false,
+		"https://www.googleapis.com/auth/drive":                false,
 	}
 	for _, s := range a.cfg.Scopes {
 		if _, ok := want[s]; ok {
