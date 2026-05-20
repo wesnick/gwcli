@@ -30,16 +30,9 @@ import (
 )
 
 const (
-	// Scope for Gmail API. The full drive scope is required to
-	// export/download Drive artifacts linked from email bodies (see
-	// drive_artifacts.go), and leaves room for future write use (e.g.
-	// sending Drive files as attachments).
-	scope = "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.settings.basic https://www.googleapis.com/auth/gmail.labels https://www.googleapis.com/auth/drive"
-
 	pageSize = 100
 
-	accessType = "offline"
-	email      = "me"
+	email = "me"
 )
 
 // Different levels of detail to download.
@@ -130,22 +123,6 @@ func NewFake(client *http.Client) (*CmdG, error) {
 		authedClient: client,
 	}
 	return conn, conn.setupClients()
-}
-
-func readConf(fn string) (Config, error) {
-	f, err := ioutil.ReadFile(fn)
-	if err != nil {
-		return Config{}, err
-	}
-	var conf Config
-	if err := json.Unmarshal(f, &conf); err != nil {
-		return Config{}, errors.Wrapf(err, "unmarshalling config")
-	}
-	if conf.OAuth.ClientID == "" {
-		conf.OAuth.ClientID = DefaultClientID
-		conf.OAuth.ClientSecret = DefaultClientSecret
-	}
-	return conf, nil
 }
 
 // New creates a new CmdG with OAuth/service-account authentication.
@@ -345,12 +322,12 @@ func oauth2Config(credBytes []byte) (*oauth2.Config, error) {
 			AuthURL:  c.Installed.AuthURI,
 			TokenURL: c.Installed.TokenURI,
 		},
-		Scopes: []string{
-			"https://www.googleapis.com/auth/gmail.modify",
-			"https://www.googleapis.com/auth/gmail.settings.basic",
-			"https://www.googleapis.com/auth/gmail.labels",
-			"https://www.googleapis.com/auth/drive",
-		},
+		// Single source of truth: the same scope set the consent screen
+		// requested (see authScopes in oauth.go). For an already-issued
+		// token this is effectively cosmetic — the refresh endpoint does
+		// not re-request scopes — but keeping one list prevents the lists
+		// from silently diverging again.
+		Scopes: append([]string(nil), authScopes...),
 	}, nil
 }
 

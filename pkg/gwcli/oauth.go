@@ -17,16 +17,24 @@ import (
 	"google.golang.org/api/tasks/v1"
 )
 
-// authScopes is the OAuth/JWT scope set shared by the Gmail, Tasks, and
-// Calendar clients. The Drive scope is requested separately (see
-// ServiceAccountAuthenticator.DriveService) because domain-wide-delegation
-// token exchange is all-or-nothing across the requested scope set.
+// authScopes is the OAuth scope set requested on the installed-app consent
+// screen (NewAuthenticator) and granted to the Gmail, Tasks, Calendar, and
+// Drive clients. Every scope the tool will ever need must be bundled here:
+// user-consent OAuth is not all-or-nothing, but Google will not add scopes
+// to an already-issued token, so anything omitted here can never be
+// consented to without re-running `gwcli configure`.
+//
+// Service accounts do NOT use this list: ServiceAccountAuthenticator
+// requests the Drive scope separately (see DriveService) because
+// domain-wide-delegation token exchange *is* all-or-nothing across the
+// requested scope set.
 var authScopes = []string{
 	gmail.GmailModifyScope,
 	gmail.GmailSettingsBasicScope,
 	gmail.GmailLabelsScope,
 	tasks.TasksScope,
 	calendar.CalendarScope,
+	drive.DriveScope,
 }
 
 // IsServiceAccount reports whether the credentials JSON is a service-account
