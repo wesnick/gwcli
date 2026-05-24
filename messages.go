@@ -732,8 +732,10 @@ func runMessagesSearch(ctx context.Context, conn *gwcli.CmdG, query string, limi
 	return out.writeTable(headers, rows)
 }
 
-// runMessagesSend sends an email message
-func runMessagesSend(ctx context.Context, conn *gwcli.CmdG, to, cc, bcc []string, subject, body string, attachments []string, html bool, threadID string, out *outputWriter) error {
+// buildOutgoingMessage assembles the headers and MIME parts for an outgoing
+// email, reading the body from stdin when it is empty. Shared by send and
+// draft.
+func buildOutgoingMessage(to, cc, bcc []string, subject, body string, attachments []string, html bool) (mail.Header, []*gwcli.Part, error) {
 	// Read body from stdin if not provided
 	if body == "" {
 		scanner := bufio.NewScanner(os.Stdin)
@@ -742,7 +744,7 @@ func runMessagesSend(ctx context.Context, conn *gwcli.CmdG, to, cc, bcc []string
 			lines = append(lines, scanner.Text())
 		}
 		if err := scanner.Err(); err != nil {
-			return fmt.Errorf("error reading body from stdin: %w", err)
+			return nil, nil, fmt.Errorf("error reading body from stdin: %w", err)
 		}
 		body = strings.Join(lines, "\n")
 	}
@@ -767,7 +769,7 @@ func runMessagesSend(ctx context.Context, conn *gwcli.CmdG, to, cc, bcc []string
 	for _, path := range attachments {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return fmt.Errorf("failed to read attachment %s: %w", path, err)
+			return nil, nil, fmt.Errorf("failed to read attachment %s: %w", path, err)
 		}
 
 		filename := filepath.Base(path)
@@ -805,6 +807,16 @@ func runMessagesSend(ctx context.Context, conn *gwcli.CmdG, to, cc, bcc []string
 		headers["Bcc"] = []string{strings.Join(bcc, ", ")}
 	}
 
+	return headers, parts, nil
+}
+
+// runMessagesSend sends an email message
+func runMessagesSend(ctx context.Context, conn *gwcli.CmdG, to, cc, bcc []string, subject, body string, attachments []string, html bool, threadID string, out *outputWriter) error {
+	headers, parts, err := buildOutgoingMessage(to, cc, bcc, subject, body, attachments, html)
+	if err != nil {
+		return err
+	}
+
 	// Determine multipart type
 	multipartType := "mixed"
 
@@ -812,8 +824,7 @@ func runMessagesSend(ctx context.Context, conn *gwcli.CmdG, to, cc, bcc []string
 	// Note: SendParts API does not return the message ID of the sent message.
 	// This is a limitation of the Gmail API's messages.send endpoint when using
 	// raw RFC822 format. The API only confirms successful submission.
-	err := conn.SendParts(ctx, gwcli.ThreadID(threadID), multipartType, headers, parts)
-	if err != nil {
+	if err := conn.SendParts(ctx, gwcli.ThreadID(threadID), multipartType, headers, parts); err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
 
@@ -823,6 +834,28 @@ func runMessagesSend(ctx context.Context, conn *gwcli.CmdG, to, cc, bcc []string
 	}
 
 	out.writeMessage("Message sent successfully")
+	return nil
+}
+
+// runMessagesDraft creates a draft email instead of sending it.
+func runMessagesDraft(ctx context.Context, conn *gwcli.CmdG, to, cc, bcc []string, subject, body string, attachments []string, html bool, threadID string, out *outputWriter) error {
+	headers, parts, err := buildOutgoingMessage(to, cc, bcc, subject, body, attachments, html)
+	if err != nil {
+		return err
+	}
+
+	multipartType := "mixed"
+
+	draftID, err := conn.DraftParts(ctx, gwcli.ThreadID(threadID), multipartType, headers, parts)
+	if err != nil {
+		return fmt.Errorf("failed to create draft: %w", err)
+	}
+
+	if out.json {
+		return out.writeJSON(map[string]string{"status": "created", "draftId": draftID})
+	}
+
+	out.writeMessage(fmt.Sprintf("Draft created: %s", draftID))
 	return nil
 }
 

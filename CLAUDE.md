@@ -156,6 +156,24 @@ for _, l := range conn.Labels() {
 
 System labels (INBOX, UNREAD, SENT, etc.) are uppercase IDs.
 
+### Sending and Drafting
+
+`messages send` and `messages draft` share the same flags (`--to`, `--subject`,
+`--body`, `--cc`, `--bcc`, `--attach`, `--html`, `--thread-id`) and the same
+MIME assembly (`buildOutgoingMessage` in `messages.go`, `buildPartsMessage` in
+`connection.go`). The body is read from stdin when `--body` is empty. The only
+difference is the final API call: `send` calls `conn.SendParts`
+(`Users.Messages.Send`, which returns no message ID), while `draft` calls
+`conn.DraftParts` (`Users.Drafts.Create`, which returns the draft ID, surfaced
+as `draftId` in `--json`). Unlike `send`, `draft` does not require `--to` or
+`--subject` (a partial draft is valid).
+
+```bash
+gwcli messages draft --to bob@example.com --subject "Hi" --body "Draft me"
+echo "body from stdin" | gwcli messages draft --to bob@example.com --subject "Hi"
+gwcli messages draft --to bob@example.com --subject "Hi" --json   # -> {"status":"created","draftId":"..."}
+```
+
 ### Email Output Formats
 
 The `gwcli messages read` command supports three output formats:
