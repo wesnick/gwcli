@@ -710,6 +710,43 @@ func ParseUserMessage(in string) (mail.Header, *Part, error) {
 //	head:  Email header.
 //	parts: Email parts.
 func (c *CmdG) SendParts(ctx context.Context, threadID ThreadID, mp string, head mail.Header, parts []*Part) error {
+	msgs, err := buildPartsMessage(mp, head, parts)
+	if err != nil {
+		return err
+	}
+	log.Infof("Final message: %q", msgs)
+	return c.send(ctx, threadID, msgs)
+}
+
+// DraftParts creates a draft from a multipart message and returns the
+// created draft ID. Arguments mirror SendParts.
+func (c *CmdG) DraftParts(ctx context.Context, threadID ThreadID, mp string, head mail.Header, parts []*Part) (string, error) {
+	msgs, err := buildPartsMessage(mp, head, parts)
+	if err != nil {
+		return "", err
+	}
+	log.Infof("Final draft message: %q", msgs)
+
+	var draftID string
+	err = wrapLogRPC("gmail.Users.Drafts.Create", func() error {
+		d, err := c.gmail.Users.Drafts.Create(email, &gmail.Draft{
+			Message: &gmail.Message{
+				Raw:      MIMEEncode(msgs),
+				ThreadId: string(threadID),
+			},
+		}).Context(ctx).Do()
+		if err != nil {
+			return err
+		}
+		draftID = d.Id
+		return nil
+	}, "email=%q threadID=%q msg=%q", email, threadID, msgs)
+	return draftID, err
+}
+
+// buildPartsMessage assembles a raw RFC822 multipart message from headers
+// and parts. Shared by SendParts and DraftParts.
+func buildPartsMessage(mp string, head mail.Header, parts []*Part) (string, error) {
 	var mbuf bytes.Buffer
 	w := multipart.NewWriter(&mbuf)
 
@@ -717,14 +754,14 @@ func (c *CmdG) SendParts(ctx context.Context, threadID ThreadID, mp string, head
 	for _, p := range parts {
 		p2, err := w.CreatePart(p.Header)
 		if err != nil {
-			return errors.Wrapf(err, "failed to create part")
+			return "", errors.Wrapf(err, "failed to create part")
 		}
 		if _, err := p2.Write([]byte(p.Contents)); err != nil {
-			return errors.Wrapf(err, "assembling part")
+			return "", errors.Wrapf(err, "assembling part")
 		}
 	}
 	if err := w.Close(); err != nil {
-		return errors.Wrapf(err, "closing multipart")
+		return "", errors.Wrapf(err, "closing multipart")
 	}
 
 	addrHeader := map[string]bool{
@@ -744,7 +781,7 @@ func (c *CmdG) SendParts(ctx context.Context, threadID ThreadID, mp string, head
 				}
 				as, err := mail.ParseAddressList(v)
 				if err != nil {
-					return errors.Wrapf(err, "parsing address list %q, which is %q", k, v)
+					return "", errors.Wrapf(err, "parsing address list %q, which is %q", k, v)
 				}
 				var ass []string
 				for _, a := range as {
@@ -766,10 +803,7 @@ func (c *CmdG) SendParts(ctx context.Context, threadID ThreadID, mp string, head
 	sort.Strings(hlines)
 	hlines = append(hlines, fmt.Sprintf(`Content-Type: multipart/%s; boundary="%s"`, mp, w.Boundary()))
 	hlines = append(hlines, `Content-Disposition: inline`)
-	msgs := strings.Join(hlines, "\r\n") + "\r\n\r\n" + mbuf.String()
-
-	log.Infof("Final message: %q", msgs)
-	return c.send(ctx, threadID, msgs)
+	return strings.Join(hlines, "\r\n") + "\r\n\r\n" + mbuf.String(), nil
 }
 
 func (c *CmdG) send(ctx context.Context, threadID ThreadID, msg string) (err error) {

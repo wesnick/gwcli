@@ -102,6 +102,17 @@ type CLI struct {
 			ThreadID string   `help:"Reply to thread" name:"thread-id"`
 		} `cmd:"" help:"Send email"`
 
+		Draft struct {
+			To       []string `help:"Recipients"`
+			Subject  string   `help:"Subject line"`
+			Body     string   `help:"Message body (or read from stdin)"`
+			Cc       []string `help:"CC recipients"`
+			Bcc      []string `help:"BCC recipients"`
+			Attach   []string `help:"File attachments" type:"existingfile"`
+			HTML     bool     `help:"Compose as HTML"`
+			ThreadID string   `help:"Associate with thread" name:"thread-id"`
+		} `cmd:"" help:"Create a draft email"`
+
 		Delete struct {
 			MessageID string `arg:"" optional:"" help:"Message ID"`
 			Stdin     bool   `help:"Read IDs from stdin"`
@@ -490,6 +501,21 @@ func main() {
 		if err := runMessagesSend(cmdCtx, conn, cli.Messages.Send.To, cli.Messages.Send.Cc, cli.Messages.Send.Bcc,
 			cli.Messages.Send.Subject, cli.Messages.Send.Body, cli.Messages.Send.Attach,
 			cli.Messages.Send.HTML, cli.Messages.Send.ThreadID, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "messages draft":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+
+		if err := runMessagesDraft(cmdCtx, conn, cli.Messages.Draft.To, cli.Messages.Draft.Cc, cli.Messages.Draft.Bcc,
+			cli.Messages.Draft.Subject, cli.Messages.Draft.Body, cli.Messages.Draft.Attach,
+			cli.Messages.Draft.HTML, cli.Messages.Draft.ThreadID, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
