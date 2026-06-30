@@ -142,6 +142,24 @@ type CLI struct {
 			UserOnly bool `help:"User labels only" name:"user-only"`
 		} `cmd:"" help:"List labels"`
 
+		Create struct {
+			Name                  string `arg:"" required:"" help:"Name of the label to create (use '/' for nesting, e.g. 'Work/Urgent')"`
+			MessageListVisibility string `name:"message-list-visibility" help:"Show label's messages in the message list: show|hide" enum:"show,hide," default:""`
+			LabelListVisibility   string `name:"label-list-visibility" help:"Show label in the label list: labelShow|labelShowIfUnread|labelHide" enum:"labelShow,labelShowIfUnread,labelHide," default:""`
+		} `cmd:"" help:"Create a new label"`
+
+		Update struct {
+			LabelID               string `arg:"" required:"" help:"Label ID or name to update"`
+			Name                  string `name:"name" help:"New name for the label"`
+			MessageListVisibility string `name:"message-list-visibility" help:"Show label's messages in the message list: show|hide" enum:"show,hide," default:""`
+			LabelListVisibility   string `name:"label-list-visibility" help:"Show label in the label list: labelShow|labelShowIfUnread|labelHide" enum:"labelShow,labelShowIfUnread,labelHide," default:""`
+		} `cmd:"" help:"Update (rename / change visibility of) a label"`
+
+		Delete struct {
+			LabelID string `arg:"" required:"" help:"Label ID or name to delete"`
+			Force   bool   `name:"force" short:"f" help:"Confirm deletion"`
+		} `cmd:"" help:"Delete a label"`
+
 		Apply struct {
 			LabelID   string `arg:"" required:"" help:"Label ID or name"`
 			MessageID string `help:"Message ID" name:"message"`
@@ -585,7 +603,46 @@ func main() {
 			os.Exit(2)
 		}
 
-	case "labels apply":
+	case "labels create <name>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+
+		if err := runLabelsCreate(cmdCtx, conn, cli.Labels.Create.Name, cli.Labels.Create.MessageListVisibility, cli.Labels.Create.LabelListVisibility, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "labels update <label-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+
+		if err := runLabelsUpdate(cmdCtx, conn, cli.Labels.Update.LabelID, cli.Labels.Update.Name, cli.Labels.Update.MessageListVisibility, cli.Labels.Update.LabelListVisibility, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "labels delete <label-id>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+
+		if err := runLabelsDelete(cmdCtx, conn, cli.Labels.Delete.LabelID, cli.Labels.Delete.Force, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "labels apply <label-id>":
 		cmdCtx := context.Background()
 		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
@@ -598,7 +655,7 @@ func main() {
 			os.Exit(2)
 		}
 
-	case "labels remove":
+	case "labels remove <label-id>":
 		cmdCtx := context.Background()
 		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {

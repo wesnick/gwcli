@@ -121,6 +121,8 @@ func (c *CmdG) LabelCache(label *Label) *Label {
 func NewFake(client *http.Client) (*CmdG, error) {
 	conn := &CmdG{
 		authedClient: client,
+		messageCache: make(map[string]*Message),
+		labelCache:   make(map[string]*Label),
 	}
 	return conn, conn.setupClients()
 }
@@ -514,6 +516,72 @@ func (c *CmdG) Labels() []*Label {
 		return ret[i].Label < ret[j].Label
 	})
 	return ret
+}
+
+// invalidateLabels drops the cached labels so the next access reloads them
+// from the Gmail API. Called after a create/update/delete mutates the
+// account's label set.
+func (c *CmdG) invalidateLabels() {
+	c.m.Lock()
+	defer c.m.Unlock()
+	c.labelCache = make(map[string]*Label)
+	c.labelsLoaded = false
+}
+
+// CreateLabel creates a new user label and returns the created Gmail label.
+// messageListVisibility ("show"/"hide") and labelListVisibility
+// ("labelShow"/"labelShowIfUnread"/"labelHide") are optional; empty values let
+// Gmail apply its defaults.
+func (c *CmdG) CreateLabel(ctx context.Context, name, messageListVisibility, labelListVisibility string) (*gmail.Label, error) {
+	label := &gmail.Label{
+		Name:                  name,
+		MessageListVisibility: messageListVisibility,
+		LabelListVisibility:   labelListVisibility,
+	}
+	var ret *gmail.Label
+	err := wrapLogRPC("gmail.Users.Labels.Create", func() (err error) {
+		ret, err = c.gmail.Users.Labels.Create(email, label).Context(ctx).Do()
+		return
+	}, "email=%q name=%q", email, name)
+	if err != nil {
+		return nil, err
+	}
+	c.invalidateLabels()
+	return ret, nil
+}
+
+// UpdateLabel renames a label and/or changes its visibility. Empty arguments
+// are left unchanged. id may be a label ID; callers that have a name should
+// resolve it to an ID first.
+func (c *CmdG) UpdateLabel(ctx context.Context, id, name, messageListVisibility, labelListVisibility string) (*gmail.Label, error) {
+	patch := &gmail.Label{
+		Name:                  name,
+		MessageListVisibility: messageListVisibility,
+		LabelListVisibility:   labelListVisibility,
+	}
+	var ret *gmail.Label
+	err := wrapLogRPC("gmail.Users.Labels.Patch", func() (err error) {
+		ret, err = c.gmail.Users.Labels.Patch(email, id, patch).Context(ctx).Do()
+		return
+	}, "email=%q id=%q name=%q", email, id, name)
+	if err != nil {
+		return nil, err
+	}
+	c.invalidateLabels()
+	return ret, nil
+}
+
+// DeleteLabel permanently deletes a user label. Messages keep existing; only
+// the label association is removed.
+func (c *CmdG) DeleteLabel(ctx context.Context, id string) error {
+	err := wrapLogRPC("gmail.Users.Labels.Delete", func() error {
+		return c.gmail.Users.Labels.Delete(email, id).Context(ctx).Do()
+	}, "email=%q id=%q", email, id)
+	if err != nil {
+		return err
+	}
+	c.invalidateLabels()
+	return nil
 }
 
 // GmailService returns the Gmail API service.

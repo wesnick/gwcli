@@ -307,11 +307,25 @@ involved — nothing is auto-created.
 
 **Label Operations:**
 - `gwcli labels list` - List all labels
+- `gwcli labels create <name>` - Create a new user label
+- `gwcli labels update <label> [--name <new>]` - Rename / change visibility
+- `gwcli labels delete <label> --force` - Delete a user label (`--force` required)
 - `gwcli labels apply <label> --message <id>` - Apply label to message
 - `gwcli labels remove <label> --message <id>` - Remove label from message
 
-Labels are created/deleted in the Gmail UI. gwcli does not manage label
-creation/deletion.
+gwcli manages labels imperatively via the Gmail API (`users.labels` CRUD,
+implemented in `labels.go` with the connection methods `CreateLabel`,
+`UpdateLabel`, `DeleteLabel` in `connection.go`). `update` and `delete` accept a
+label **name or ID** (resolved via the shared `resolveLabelID` helper, the same
+name/ID matching used elsewhere); nested labels use `/` in the name (e.g.
+`Work/Urgent`). Visibility flags map to the Gmail API:
+`--message-list-visibility` (`show`/`hide`) and `--label-list-visibility`
+(`labelShow`/`labelShowIfUnread`/`labelHide`). `create` rejects a duplicate
+name; `delete` refuses to remove Gmail system labels (INBOX, SENT, ...) and
+requires `--force` (non-interactive rule #3). Any mutation invalidates the
+connection's label cache so the next access reloads from the API. The
+`gmail.labels` OAuth scope (already requested) covers all of this — no
+re-consent needed.
 
 ### Filter Management
 
@@ -675,7 +689,7 @@ Note: Service accounts require domain-wide delegation with the `https://www.goog
 2. **Kong syntax**: Command matching uses exact strings like `"messages list"` not path-style routes
 3. **No interactive prompts**: All commands must work non-interactively (for scripting). Destructive commands require an explicit `--force` flag instead of prompting (e.g. `filters delete`).
 4. **Label IDs vs Names**: Always handle both - users may provide either
-5. **Label create/delete**: Done in the Gmail UI; gwcli does not create/delete labels
+5. **Label create/delete**: Managed via the Gmail API (`labels create`/`update`/`delete`); `delete` requires `--force` and rejects system labels
 6. **Labels load from the Gmail API**: Labels are fetched directly from the API (all user labels + system labels). There is no config file and nothing is auto-created.
 
 ## Error Handling Pattern
