@@ -538,7 +538,7 @@ func main() {
 			os.Exit(2)
 		}
 
-	case "messages delete":
+	case "messages delete", "messages delete <message-id>":
 		cmdCtx := context.Background()
 		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
@@ -551,7 +551,7 @@ func main() {
 			os.Exit(2)
 		}
 
-	case "messages mark-read":
+	case "messages mark-read", "messages mark-read <message-id>":
 		cmdCtx := context.Background()
 		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
@@ -564,7 +564,7 @@ func main() {
 			os.Exit(2)
 		}
 
-	case "messages mark-unread":
+	case "messages mark-unread", "messages mark-unread <message-id>":
 		cmdCtx := context.Background()
 		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
@@ -577,7 +577,7 @@ func main() {
 			os.Exit(2)
 		}
 
-	case "messages move":
+	case "messages move", "messages move <message-id>":
 		cmdCtx := context.Background()
 		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
