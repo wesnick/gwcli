@@ -7,7 +7,7 @@ require (
 	github.com/alecthomas/kong v1.16.0
 	github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608
 	github.com/pkg/errors v0.9.1
-	github.com/sirupsen/logrus v1.9.4
+	github.com/sirupsen/logrus v1.10.2
 	golang.org/x/net v0.57.0
 	golang.org/x/oauth2 v0.36.0
 	google.golang.org/api v0.288.0
