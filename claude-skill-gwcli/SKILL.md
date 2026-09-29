@@ -1,6 +1,6 @@
 ---
 name: gwcli
-description: This skill should be used when working with Gmail, Google Tasks, or Google Calendar operations via the gwcli command-line tool. Use this skill when the user asks to interact with Gmail (read/send/search emails, manage labels, download attachments), manage Google Tasks (create/complete tasks), work with Google Calendar (create/list events), or needs help with gwcli commands.
+description: This skill should be used when working with Gmail, Google Tasks, or Google Calendar operations via the gwcli command-line tool. Use this skill when the user asks to interact with Gmail (read/send/search emails, manage labels, download attachments), manage Google Tasks (create/complete tasks), work with Google Calendar (create/list events), manage Google Keep notes on a Workspace domain (service account only), or needs help with gwcli commands.
 ---
 
 # gwcli
@@ -23,6 +23,7 @@ gwcli provides these main resource types:
 8. **Tasks** - List, create, read, complete, and delete tasks
 9. **Calendars** - List accessible Google Calendars
 10. **Events** - List, create, read, update, delete, search, and import calendar events
+11. **Keep** - List, get, create (text or checklist), and delete Google Keep notes (Workspace service account + domain-wide delegation only)
 
 ## When to Use This Skill
 
@@ -584,12 +585,41 @@ gwcli events create --summary "Meeting" --start "2025-01-15T10:00:00Z" \
     --reminder "15m popup" --reminder "1h email"
 ```
 
+### Google Keep (Workspace service accounts only)
+
+Keep is enterprise-only: it works **only** with a service-account
+`credentials.json` whose domain-wide delegation authorizes
+`https://www.googleapis.com/auth/keep` (or `keep.readonly` for list/get).
+OAuth credentials are rejected; there is no `gwcli configure` path.
+
+```bash
+# Every keep command needs a service account + an impersonated Workspace user
+export GWCLI_USER=alice@example.com       # or pass --user / --impersonate
+
+# List notes (non-trashed by default; --limit 0 = no cap)
+gwcli keep list
+gwcli keep list --filter 'create_time > "2026-01-01T00:00:00Z"' --limit 20
+gwcli keep list --filter 'trashed = true' --json
+
+# Show a note (text body or checklist items; accepts <id> or notes/<id>)
+gwcli keep get <note-id>
+gwcli keep get <note-id> --json
+
+# Create a text note or a checklist (exactly one of --text / --checklist)
+gwcli keep create --title "Ideas" --text "Ship the Keep integration"
+echo "body from stdin" | gwcli keep create --title "Ideas" --text -
+gwcli keep create --title "Groceries" --checklist "Milk, 2%" --checklist "Eggs"
+
+# Permanently delete a note (--force required; the API has no undo)
+gwcli keep delete <note-id> --force
+```
+
 ## Global Flags
 
 Available on all commands:
 
 - `--config <path>` - Config directory path (default: ~/.config/gwcli)
-- `--user <email>` - User email for service account impersonation
+- `--user <email>` - User email for service account impersonation (alias `--impersonate`; env `GWCLI_USER`)
 - `--json` - Output in JSON format for programmatic processing
 - `--verbose` - Enable verbose logging
 - `--no-color` - Disable colored output
@@ -868,6 +898,9 @@ gwcli --user user@example.com tasklists list
 
 # Create calendar event for a user
 gwcli --user user@example.com events create --summary "Meeting" --start "2025-01-15T10:00:00Z"
+
+# Keep (service accounts only)
+gwcli --user user@example.com keep list
 ```
 
 Note: Service accounts require domain-wide delegation with appropriate scopes authorized in Google Workspace Admin Console.

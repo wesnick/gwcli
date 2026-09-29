@@ -57,7 +57,7 @@ func init() {
 
 type CLI struct {
 	Config  string `help:"Config directory path" default:"~/.config/gwcli" type:"path"`
-	User    string `help:"User email for service account impersonation (required for service accounts)"`
+	User    string `help:"User email for service account impersonation (required for service accounts)" aliases:"impersonate" env:"GWCLI_USER"`
 	JSON    bool   `help:"JSON output format"`
 	Verbose bool   `help:"Verbose logging"`
 	NoColor bool   `help:"Disable colored output"`
@@ -430,6 +430,28 @@ type CLI struct {
 			DryRun     bool   `name:"dry-run" help:"Parse and validate without importing"`
 		} `cmd:"" help:"Import events from ICS file"`
 	} `cmd:"" help:"Google Calendar event operations"`
+
+	Keep struct {
+		List struct {
+			Filter string `name:"filter" help:"AIP-160 filter on create_time, update_time, trash_time, trashed (default: non-trashed notes)"`
+			Limit  int    `name:"limit" default:"100" help:"Max notes (0 = no limit)"`
+		} `cmd:"" help:"List notes"`
+
+		Get struct {
+			NoteID string `arg:"" required:"" name:"note-id" help:"Note ID (or notes/<id>)"`
+		} `cmd:"" help:"Show a note's text or checklist items"`
+
+		Create struct {
+			Title     string   `name:"title" short:"t" help:"Note title"`
+			Text      string   `name:"text" help:"Note text (- to read from stdin)"`
+			Checklist []string `name:"checklist" sep:"none" help:"Checklist item (repeat for each item)"`
+		} `cmd:"" help:"Create a text note or checklist"`
+
+		Delete struct {
+			NoteID string `arg:"" required:"" name:"note-id" help:"Note ID (or notes/<id>)"`
+			Force  bool   `name:"force" short:"f" help:"Confirm permanent deletion"`
+		} `cmd:"" help:"Permanently delete a note"`
+	} `cmd:"" help:"Google Keep notes (Workspace service account + domain-wide delegation only)"`
 }
 
 func main() {
@@ -1229,6 +1251,57 @@ func main() {
 		}
 		if err := runEventsImport(cmdCtx, conn, cli.Events.Import.CalendarID,
 			reader, cli.Events.Import.DryRun, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "keep list":
+		client, err := getKeepClient(cli.Config, cli.User, true)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runKeepList(context.Background(), client, cli.Keep.List.Filter,
+			cli.Keep.List.Limit, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "keep get <note-id>":
+		client, err := getKeepClient(cli.Config, cli.User, true)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runKeepGet(context.Background(), client, cli.Keep.Get.NoteID, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "keep create":
+		client, err := getKeepClient(cli.Config, cli.User, false)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		opts := keepCreateOptions{
+			title:     cli.Keep.Create.Title,
+			text:      cli.Keep.Create.Text,
+			checklist: cli.Keep.Create.Checklist,
+		}
+		if err := runKeepCreate(context.Background(), client, opts, os.Stdin, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "keep delete <note-id>":
+		client, err := getKeepClient(cli.Config, cli.User, false)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runKeepDelete(context.Background(), client, cli.Keep.Delete.NoteID,
+			cli.Keep.Delete.Force, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
