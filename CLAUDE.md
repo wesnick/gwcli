@@ -95,6 +95,7 @@ The `CmdG` struct is the central object passed to all command handlers.
 - **`drive_write.go`** - Drive write/organize verbs: `mkdir`/`mv`/`rename`/`cp`/`rm`/`share`/`link`/`permissions` and the upload engine (multi-path, recursive, `--convert`, `--upsert`); shared `writeDriveFile` composable-JSON helper and idempotent `ensureDriveFolder`
 - **`tasklists.go`** - Task list operations (list, create, delete)
 - **`tasks.go`** - Task operations (list, read, create, complete, delete)
+- **`keep.go`** - Google Keep notes (list, get, create, delete); service-account/DWD only. Handlers take a `keepClient` interface (not `*gwcli.CmdG`) so they can be tested with a fake
 
 Each command handler follows the pattern:
 ```go
@@ -283,6 +284,7 @@ For Google Workspace accounts, you can use a service account to impersonate user
    - `https://www.googleapis.com/auth/gmail.labels`
    - `https://www.googleapis.com/auth/tasks`
    - `https://www.googleapis.com/auth/calendar`
+   - `https://www.googleapis.com/auth/keep` (only for the `keep` commands; `keep.readonly` suffices for `keep list`/`keep get`). See Google Keep Commands.
    - `https://www.googleapis.com/auth/drive` (only for `artifacts download`; Gmail/Tasks/Calendar work without it). The service-account `DriveService` requests the full `drive` scope, so domain-wide delegation must authorize `https://www.googleapis.com/auth/drive` for the service account's Client ID (the numeric `client_id` from `credentials.json`). DWD token exchange is per-scope-set; an entry authorizing only `drive.readonly` will **not** satisfy it.
 9. Use the `--user` flag to specify which user to impersonate:
    ```bash
@@ -579,6 +581,51 @@ gwcli --user user@example.com tasks create <tasklist-id> --title "New Task"
 
 Note: Service accounts require domain-wide delegation with the `https://www.googleapis.com/auth/tasks` scope authorized in Google Workspace Admin Console.
 
+## Google Keep Commands
+
+Keep's REST API is enterprise-only, so the `keep` group supports **only**
+service-account + domain-wide-delegation auth. It never falls back to
+installed-app OAuth: `gwcli.NewKeepService` (`pkg/gwcli/keep.go`) reads
+`credentials.json` directly (bypassing `getConnection`/`gwcli.New`, so Gmail
+is not initialized and `token.json` is never touched) and returns
+`ErrKeepRequiresServiceAccount` (exit 3) for OAuth credentials, or an error if
+no user to impersonate was given.
+
+The impersonated user comes from the global `--user` flag, its alias
+`--impersonate`, or the `GWCLI_USER` env var.
+
+Scopes: only Keep scopes are requested (like `DriveService`, because DWD token
+exchange is all-or-nothing per scope set). Writes (`create`/`delete`) request
+`keep`. Reads (`list`/`get`) use `fallbackTokenSource`: try `keep`, and on an
+`unauthorized_client` token-exchange failure switch permanently to
+`keep.readonly`. `gwcli.IsUnauthorizedClient` detects that failure (the JWT
+flow leaves `RetrieveError.ErrorCode` empty, so it also parses the body).
+`wrapKeepErr` (`keep.go`) turns DWD scope failures, insufficient-scope 403s,
+and "Keep API not enabled" 403s into actionable messages; those setup
+failures are `*keepSetupError` (`errors.Is(err, errKeepSetup)`) and exit 3 via
+`keepExitCode`. Keep answers a get/delete of a deleted or nonexistent note with
+a generic 403 "caller does not have permission"; `wrapKeepErr` rewords that as
+"note not found or not accessible" (exit 2).
+
+```bash
+gwcli --user alice@example.com keep list [--filter '<AIP-160>'] [--limit 100]
+gwcli --user alice@example.com keep get <note-id|notes/<id>>
+gwcli --user alice@example.com keep create --title "T" --text "body"        # --text - reads stdin
+gwcli --user alice@example.com keep create --title "T" --checklist "a" --checklist "b, c"
+gwcli --user alice@example.com keep delete <note-id> --force                # permanent, --force required
+```
+
+- `list` paginates (`Notes.List`, page size ≤ 100) up to `--limit` (0 = no
+  cap). `--filter` is passed through (fields: `create_time`, `update_time`,
+  `trash_time`, `trashed`); with no filter the API returns non-trashed notes.
+- Note references accept the bare ID or the `notes/<id>` resource name
+  (`keepNoteName`). JSON output (`keepNoteOutput`) has `id` (bare), `name`,
+  `title`, `type` (`text`/`checklist`), `text` or `items[]`
+  (`text`/`checked`/`children`), timestamps, `trashed`, `attachments`.
+- `create` requires exactly one of `--text`/`--checklist`. `--checklist` is
+  `sep:"none"` so items containing commas are not split.
+- `delete` is irreversible via the API and requires `--force`.
+
 ## Google Calendar Commands
 
 gwcli supports Google Calendar API for managing calendars and events.
@@ -676,7 +723,7 @@ Note: Service accounts require domain-wide delegation with the `https://www.goog
 ## Dependencies
 
 - **Kong** (`github.com/alecthomas/kong`) - CLI parsing (not Cobra)
-- **Google APIs** - Gmail API, Tasks API, Calendar API
+- **Google APIs** - Gmail API, Tasks API, Calendar API, Drive API, Keep API (`google.golang.org/api/keep/v1`)
 - **golang.org/x/oauth2** - OAuth2 authentication
 - **logrus** - Logging
 - **html-to-markdown/v2** (`github.com/JohannesKaufmann/html-to-markdown/v2`) - HTML to Markdown conversion

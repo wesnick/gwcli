@@ -49,6 +49,13 @@ configure` to re-consent after the scope was added (Google does not grant new
 scopes to an already-issued `token.json`). `artifacts list` is Gmail-only and
 does **not** require the Drive scope.
 
+**Google Keep scopes (service accounts only):** the `keep` commands use
+`https://www.googleapis.com/auth/keep` (read/write) or
+`https://www.googleapis.com/auth/keep.readonly` (read-only). They are **not**
+part of the OAuth consent set above: Google's Keep API is enterprise-only and
+is reachable solely through a Workspace service account with domain-wide
+delegation. See [Google Keep](#google-keep-workspace-only).
+
 ### Command-to-Scope Matrix
 
 This table shows which scopes are required for each command group:
@@ -233,6 +240,7 @@ gwcli supports a service-account authenticator to impersonate Workspace users:
    gwcli --user ops@example.com tasklists list
    gwcli --user ops@example.com events list
    ```
+   The user can also come from `--impersonate` (alias of `--user`) or the `GWCLI_USER` environment variable.
 4. Rotate the service-account key as needed; gwcli simply streams the file on every invocation.
 
 ### Configuration Files
@@ -477,6 +485,47 @@ gwcli tasks complete <tasklist-id> <task-id>
 
 # Delete a task
 gwcli tasks delete <tasklist-id> <task-id> --force
+```
+
+### Google Keep (Workspace only)
+
+Google Keep's API is enterprise-only, so `gwcli keep` works **exclusively**
+with a service account using domain-wide delegation — there is no
+`gwcli configure` / browser-consent path for Keep, and OAuth (`installed`)
+credentials are rejected with setup instructions. Setup:
+
+1. Enable the **Google Keep API** in the service account's Cloud project.
+2. In the Admin Console (`Security → API controls → Domain-wide delegation`)
+   authorize the service account's numeric Client ID for
+   `https://www.googleapis.com/auth/keep` (read/write). Read-only commands
+   (`list`/`get`) also work if only `https://www.googleapis.com/auth/keep.readonly`
+   is authorized: gwcli tries the full scope first and falls back to read-only.
+3. Pass the user to impersonate with `--user`/`--impersonate` or `GWCLI_USER`.
+
+Keep requests only the Keep scope (DWD token exchange is all-or-nothing per
+scope set), so the Gmail/Tasks/Calendar scopes don't need to be authorized to
+use Keep, and Keep never reads `token.json`.
+
+```bash
+# Every keep command needs a service account + an impersonated Workspace user
+export GWCLI_USER=alice@example.com       # or pass --user / --impersonate
+
+# List notes (non-trashed by default; --limit 0 = no cap)
+gwcli keep list
+gwcli keep list --filter 'create_time > "2026-01-01T00:00:00Z"' --limit 20
+gwcli keep list --filter 'trashed = true' --json
+
+# Show a note (text body or checklist items; accepts <id> or notes/<id>)
+gwcli keep get <note-id>
+gwcli keep get <note-id> --json
+
+# Create a text note or a checklist (exactly one of --text / --checklist)
+gwcli keep create --title "Ideas" --text "Ship the Keep integration"
+echo "body from stdin" | gwcli keep create --title "Ideas" --text -
+gwcli keep create --title "Groceries" --checklist "Milk, 2%" --checklist "Eggs"
+
+# Permanently delete a note (--force required; the API has no undo)
+gwcli keep delete <note-id> --force
 ```
 
 ### Calendars

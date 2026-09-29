@@ -20,13 +20,14 @@ gwcli <resource> <action> [arguments] [flags]
 - **tasks** - Google Task operations
 - **calendars** - Google Calendar listing
 - **events** - Google Calendar event operations
+- **keep** - Google Keep notes (Workspace service account + domain-wide delegation only)
 
 ## Global Flags
 
 Available on all commands:
 
 - `--config <path>` - Config directory path (default: ~/.config/gwcli)
-- `--user <email>` - User email for service account impersonation
+- `--user <email>` - User email for service account impersonation (alias `--impersonate`; env `GWCLI_USER`)
 - `--json` - Output results in JSON format
 - `--verbose` - Enable verbose logging
 - `--no-color` - Disable colored output
@@ -1216,6 +1217,56 @@ cat events.ics | gwcli events import --file -
 
 # Import to specific calendar
 gwcli events import work@group.calendar.google.com --file meeting.ics
+```
+
+## Keep Commands
+
+Google Keep is enterprise-only: every `keep` command requires a service-account
+`credentials.json` with domain-wide delegation for
+`https://www.googleapis.com/auth/keep` (`keep.readonly` suffices for `list`/`get`)
+and a user to impersonate (`--user`, `--impersonate`, or `GWCLI_USER`). OAuth
+credentials are rejected with exit code 3.
+
+### gwcli keep list
+
+List notes (non-trashed unless `--filter` says otherwise).
+
+**Flags:**
+- `--filter <expr>` - AIP-160 filter on `create_time`, `update_time`, `trash_time`, `trashed`
+- `--limit <n>` - Max notes (default 100, 0 = no limit)
+
+Text output columns: `ID`, `TYPE` (`text`/`checklist`), `TITLE`, `UPDATED`.
+
+### gwcli keep get <note-id>
+
+Show one note. Accepts `<id>` or `notes/<id>`. Text mode prints a header block
+then the body, with checklist items as `[x] item` / `[ ] item` (children
+indented). `--json` returns `id`, `name`, `title`, `type`, `text` or `items[]`
+(`text`, `checked`, `children`), `createTime`, `updateTime`, `trashed`,
+`trashTime`, `attachments`.
+
+### gwcli keep create
+
+**Flags:**
+- `--title, -t <title>` - Note title
+- `--text <text>` - Text body (`-` reads stdin)
+- `--checklist <item>` - Checklist item; repeat per item (commas are kept)
+
+Exactly one of `--text` / `--checklist` is required. `--json` returns the
+created note (same shape as `keep get --json`).
+
+### gwcli keep delete <note-id>
+
+Permanently delete a note (the API has no trash/undo).
+
+**Flags:**
+- `--force, -f` - Required to confirm deletion
+
+```bash
+export GWCLI_USER=alice@example.com
+gwcli keep create --title "Groceries" --checklist "Milk" --checklist "Eggs" --json | jq -r .id
+gwcli keep list --json | jq -r '.[] | select(.type=="checklist") | .id'
+gwcli keep delete <note-id> --force
 ```
 
 ## Configuration
