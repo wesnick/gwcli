@@ -172,32 +172,66 @@ const keepScopeHelp = "Google Keep access denied: the service account is not " +
 	"https://www.googleapis.com/auth/keep.readonly; create/delete need the " +
 	"full keep scope), and make sure --user is a user in that Workspace domain"
 
+// errKeepSetup marks errors caused by Workspace/Cloud setup (DWD scope not
+// authorized, Keep API not enabled) rather than by the command itself, so
+// callers can exit 3 (config error) instead of 2.
+var errKeepSetup = errors.New("keep setup error")
+
+// keepSetupError carries an actionable setup message while preserving the
+// underlying API error for errors.Is/As.
+type keepSetupError struct {
+	msg string
+	err error
+}
+
+func (e *keepSetupError) Error() string        { return fmt.Sprintf("%s (underlying: %v)", e.msg, e.err) }
+func (e *keepSetupError) Unwrap() error        { return e.err }
+func (e *keepSetupError) Is(target error) bool { return target == errKeepSetup }
+
+// keepExitCode maps a Keep command error to the CLI exit code.
+func keepExitCode(err error) int {
+	if errors.Is(err, errKeepSetup) {
+		return 3
+	}
+	return 2
+}
+
+const keepAPIDisabledHelp = "the Google Keep API is not enabled for the " +
+	"service account's Cloud project; enable keep.googleapis.com " +
+	"in the Google Cloud console"
+
 // wrapKeepErr turns Keep auth/enablement failures into actionable messages.
+// Setup failures are returned as *keepSetupError (errors.Is errKeepSetup).
 func wrapKeepErr(err error) error {
 	if err == nil {
 		return nil
 	}
 	if gwcli.IsUnauthorizedClient(err) {
-		return fmt.Errorf("%s (underlying: %w)", keepScopeHelp, err)
+		return &keepSetupError{msg: keepScopeHelp, err: err}
 	}
 	msg := err.Error()
 	var apiErr *googleapi.Error
 	if errors.As(err, &apiErr) && apiErr.Code == 403 {
 		for _, sig := range []string{"SERVICE_DISABLED", "has not been used", "is disabled"} {
 			if strings.Contains(msg, sig) {
-				return fmt.Errorf("the Google Keep API is not enabled for the "+
-					"service account's Cloud project; enable keep.googleapis.com "+
-					"in the Google Cloud console (underlying: %w)", err)
+				return &keepSetupError{msg: keepAPIDisabledHelp, err: err}
 			}
 		}
 		for _, sig := range []string{"ACCESS_TOKEN_SCOPE_INSUFFICIENT", "insufficient authentication scopes", "insufficientPermissions"} {
 			if strings.Contains(msg, sig) {
-				return fmt.Errorf("%s (underlying: %w)", keepScopeHelp, err)
+				return &keepSetupError{msg: keepScopeHelp, err: err}
 			}
+		}
+		// Keep answers a request for a deleted or nonexistent note with a
+		// generic 403 "caller does not have permission" rather than a 404.
+		if strings.Contains(msg, "does not have permission") {
+			return fmt.Errorf("note not found or not accessible to the "+
+				"impersonated user (Keep returns 403 for deleted or "+
+				"nonexistent notes): %w", err)
 		}
 	}
 	if strings.Contains(msg, "unauthorized_client") {
-		return fmt.Errorf("%s (underlying: %w)", keepScopeHelp, err)
+		return &keepSetupError{msg: keepScopeHelp, err: err}
 	}
 	return err
 }

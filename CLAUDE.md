@@ -601,7 +601,11 @@ exchange is all-or-nothing per scope set). Writes (`create`/`delete`) request
 `keep.readonly`. `gwcli.IsUnauthorizedClient` detects that failure (the JWT
 flow leaves `RetrieveError.ErrorCode` empty, so it also parses the body).
 `wrapKeepErr` (`keep.go`) turns DWD scope failures, insufficient-scope 403s,
-and "Keep API not enabled" 403s into actionable messages.
+and "Keep API not enabled" 403s into actionable messages; those setup
+failures are `*keepSetupError` (`errors.Is(err, errKeepSetup)`) and exit 3 via
+`keepExitCode`. Keep answers a get/delete of a deleted or nonexistent note with
+a generic 403 "caller does not have permission"; `wrapKeepErr` rewords that as
+"note not found or not accessible" (exit 2).
 
 ```bash
 gwcli --user alice@example.com keep list [--filter '<AIP-160>'] [--limit 100]

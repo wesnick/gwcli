@@ -477,14 +477,16 @@ func TestRunKeepDelete(t *testing.T) {
 func TestWrapKeepErr(t *testing.T) {
 	dwd := &oauth2.RetrieveError{Body: []byte(`{"error":"unauthorized_client","error_description":"Client is unauthorized"}`)}
 	cases := []struct {
-		name string
-		err  error
-		want string
+		name     string
+		err      error
+		want     string
+		exitCode int
 	}{
-		{"dwd scope", fmt.Errorf("Get: %w", dwd), "Domain-wide delegation"},
-		{"api disabled", &googleapi.Error{Code: 403, Message: "Google Keep API has not been used in project 1 before or it is disabled"}, "keep.googleapis.com"},
-		{"insufficient scope", &googleapi.Error{Code: 403, Message: "Request had insufficient authentication scopes."}, "Domain-wide delegation"},
-		{"other", &googleapi.Error{Code: 404, Message: "not found"}, "not found"},
+		{"dwd scope", fmt.Errorf("Get: %w", dwd), "Domain-wide delegation", 3},
+		{"api disabled", &googleapi.Error{Code: 403, Message: "Google Keep API has not been used in project 1 before or it is disabled"}, "keep.googleapis.com", 3},
+		{"insufficient scope", &googleapi.Error{Code: 403, Message: "Request had insufficient authentication scopes."}, "Domain-wide delegation", 3},
+		{"missing note", &googleapi.Error{Code: 403, Message: "The caller does not have permission"}, "note not found", 2},
+		{"other", &googleapi.Error{Code: 404, Message: "not found"}, "not found", 2},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -494,6 +496,9 @@ func TestWrapKeepErr(t *testing.T) {
 			}
 			if !errors.Is(got, c.err) {
 				t.Error("wrapped error must preserve the original via %w")
+			}
+			if code := keepExitCode(fmt.Errorf("failed: %w", got)); code != c.exitCode {
+				t.Errorf("keepExitCode = %d, want %d", code, c.exitCode)
 			}
 		})
 	}

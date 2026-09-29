@@ -1264,7 +1264,7 @@ func main() {
 		if err := runKeepList(context.Background(), client, cli.Keep.List.Filter,
 			cli.Keep.List.Limit, out); err != nil {
 			out.writeError(err)
-			os.Exit(2)
+			os.Exit(keepExitCode(err))
 		}
 
 	case "keep get <note-id>":
@@ -1275,7 +1275,7 @@ func main() {
 		}
 		if err := runKeepGet(context.Background(), client, cli.Keep.Get.NoteID, out); err != nil {
 			out.writeError(err)
-			os.Exit(2)
+			os.Exit(keepExitCode(err))
 		}
 
 	case "keep create":
@@ -1291,7 +1291,7 @@ func main() {
 		}
 		if err := runKeepCreate(context.Background(), client, opts, os.Stdin, out); err != nil {
 			out.writeError(err)
-			os.Exit(2)
+			os.Exit(keepExitCode(err))
 		}
 
 	case "keep delete <note-id>":
@@ -1303,7 +1303,7 @@ func main() {
 		if err := runKeepDelete(context.Background(), client, cli.Keep.Delete.NoteID,
 			cli.Keep.Delete.Force, out); err != nil {
 			out.writeError(err)
-			os.Exit(2)
+			os.Exit(keepExitCode(err))
 		}
 
 	default:
