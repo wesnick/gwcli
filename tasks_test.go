@@ -63,7 +63,7 @@ func TestRunTasksList(t *testing.T) {
 		writer: &buf,
 	}
 
-	err = runTasksList(context.Background(), conn, "TASKLIST123", false, out)
+	err = runTasksList(context.Background(), conn, tasksListOptions{tasklistID: "TASKLIST123"}, out)
 	if err != nil {
 		t.Fatalf("runTasksList() error = %v", err)
 	}
@@ -125,7 +125,7 @@ func TestRunTasksListEmpty(t *testing.T) {
 		writer: &buf,
 	}
 
-	err = runTasksList(context.Background(), conn, "TASKLIST123", false, out)
+	err = runTasksList(context.Background(), conn, tasksListOptions{tasklistID: "TASKLIST123"}, out)
 	if err != nil {
 		t.Fatalf("runTasksList() error = %v", err)
 	}
@@ -137,34 +137,6 @@ func TestRunTasksListEmpty(t *testing.T) {
 
 	if len(result) != 0 {
 		t.Errorf("expected 0 tasks, got %d", len(result))
-	}
-}
-
-func TestRunTasksListEmptyTasklistID(t *testing.T) {
-	client := &http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			t.Fatal("HTTP request should not be made with empty tasklist ID")
-			return nil, nil
-		}),
-	}
-
-	conn, err := gwcli.NewFake(client)
-	if err != nil {
-		t.Fatalf("NewFake() error = %v", err)
-	}
-
-	var buf bytes.Buffer
-	out := &outputWriter{
-		json:   true,
-		writer: &buf,
-	}
-
-	err = runTasksList(context.Background(), conn, "", false, out)
-	if err == nil {
-		t.Fatal("expected error for empty tasklist ID, got nil")
-	}
-	if !strings.Contains(err.Error(), "task list ID is required") {
-		t.Errorf("expected error message to contain 'task list ID is required', got %q", err.Error())
 	}
 }
 
@@ -209,7 +181,7 @@ func TestRunTasksListTextOutput(t *testing.T) {
 		writer: &buf,
 	}
 
-	err = runTasksList(context.Background(), conn, "TASKLIST123", false, out)
+	err = runTasksList(context.Background(), conn, tasksListOptions{tasklistID: "TASKLIST123"}, out)
 	if err != nil {
 		t.Fatalf("runTasksList() error = %v", err)
 	}
@@ -276,7 +248,7 @@ func TestRunTasksCreate(t *testing.T) {
 		writer: &buf,
 	}
 
-	err = runTasksCreate(context.Background(), conn, "TASKLIST123", "New Task", "Some notes", "2024-02-01T00:00:00.000Z", out)
+	err = runTasksCreate(context.Background(), conn, "TASKLIST123", taskCreateOptions{title: "New Task", notes: "Some notes", due: "2024-02-01T00:00:00.000Z"}, out)
 	if err != nil {
 		t.Fatalf("runTasksCreate() error = %v", err)
 	}
@@ -319,40 +291,12 @@ func TestRunTasksCreateEmptyTitle(t *testing.T) {
 		writer: &buf,
 	}
 
-	err = runTasksCreate(context.Background(), conn, "TASKLIST123", "", "", "", out)
+	err = runTasksCreate(context.Background(), conn, "TASKLIST123", taskCreateOptions{title: "", notes: "", due: ""}, out)
 	if err == nil {
 		t.Fatal("expected error for empty title, got nil")
 	}
 	if !strings.Contains(err.Error(), "task title is required") {
 		t.Errorf("expected error message to contain 'task title is required', got %q", err.Error())
-	}
-}
-
-func TestRunTasksCreateEmptyTasklistID(t *testing.T) {
-	client := &http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			t.Fatal("HTTP request should not be made with empty tasklist ID")
-			return nil, nil
-		}),
-	}
-
-	conn, err := gwcli.NewFake(client)
-	if err != nil {
-		t.Fatalf("NewFake() error = %v", err)
-	}
-
-	var buf bytes.Buffer
-	out := &outputWriter{
-		json:   true,
-		writer: &buf,
-	}
-
-	err = runTasksCreate(context.Background(), conn, "", "New Task", "", "", out)
-	if err == nil {
-		t.Fatal("expected error for empty tasklist ID, got nil")
-	}
-	if !strings.Contains(err.Error(), "task list ID is required") {
-		t.Errorf("expected error message to contain 'task list ID is required', got %q", err.Error())
 	}
 }
 
@@ -385,7 +329,7 @@ func TestRunTasksCreateTextOutput(t *testing.T) {
 		writer: &buf,
 	}
 
-	err = runTasksCreate(context.Background(), conn, "TASKLIST123", "New Task", "", "", out)
+	err = runTasksCreate(context.Background(), conn, "TASKLIST123", taskCreateOptions{title: "New Task", notes: "", due: ""}, out)
 	if err != nil {
 		t.Fatalf("runTasksCreate() error = %v", err)
 	}
@@ -414,7 +358,7 @@ func TestRunTasksRead(t *testing.T) {
 	}`
 
 	client := &http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		Transport: withTaskListRoute(`{"items": []}`, func(req *http.Request) (*http.Response, error) {
 			if req.Method != "GET" {
 				t.Errorf("expected GET request, got %s", req.Method)
 			}
@@ -469,7 +413,7 @@ func TestRunTasksRead(t *testing.T) {
 
 func TestRunTasksReadEmptyTaskID(t *testing.T) {
 	client := &http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		Transport: withTaskListRoute(`{"items": []}`, func(req *http.Request) (*http.Response, error) {
 			t.Fatal("HTTP request should not be made with empty task ID")
 			return nil, nil
 		}),
@@ -495,34 +439,6 @@ func TestRunTasksReadEmptyTaskID(t *testing.T) {
 	}
 }
 
-func TestRunTasksReadEmptyTasklistID(t *testing.T) {
-	client := &http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			t.Fatal("HTTP request should not be made with empty tasklist ID")
-			return nil, nil
-		}),
-	}
-
-	conn, err := gwcli.NewFake(client)
-	if err != nil {
-		t.Fatalf("NewFake() error = %v", err)
-	}
-
-	var buf bytes.Buffer
-	out := &outputWriter{
-		json:   true,
-		writer: &buf,
-	}
-
-	err = runTasksRead(context.Background(), conn, "", "TASK123", out)
-	if err == nil {
-		t.Fatal("expected error for empty tasklist ID, got nil")
-	}
-	if !strings.Contains(err.Error(), "task list ID is required") {
-		t.Errorf("expected error message to contain 'task list ID is required', got %q", err.Error())
-	}
-}
-
 func TestRunTasksReadTextOutput(t *testing.T) {
 	const taskJSON = `{
 		"kind": "tasks#task",
@@ -534,7 +450,7 @@ func TestRunTasksReadTextOutput(t *testing.T) {
 	}`
 
 	client := &http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		Transport: withTaskListRoute(`{"items": []}`, func(req *http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     make(http.Header),
@@ -587,7 +503,7 @@ func TestRunTasksReadCompletedTextOutput(t *testing.T) {
 	}`
 
 	client := &http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		Transport: withTaskListRoute(`{"items": []}`, func(req *http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     make(http.Header),
@@ -706,34 +622,6 @@ func TestRunTasksCompleteEmptyTaskID(t *testing.T) {
 	}
 }
 
-func TestRunTasksCompleteEmptyTasklistID(t *testing.T) {
-	client := &http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			t.Fatal("HTTP request should not be made with empty tasklist ID")
-			return nil, nil
-		}),
-	}
-
-	conn, err := gwcli.NewFake(client)
-	if err != nil {
-		t.Fatalf("NewFake() error = %v", err)
-	}
-
-	var buf bytes.Buffer
-	out := &outputWriter{
-		json:   true,
-		writer: &buf,
-	}
-
-	err = runTasksComplete(context.Background(), conn, "", "TASK123", out)
-	if err == nil {
-		t.Fatal("expected error for empty tasklist ID, got nil")
-	}
-	if !strings.Contains(err.Error(), "task list ID is required") {
-		t.Errorf("expected error message to contain 'task list ID is required', got %q", err.Error())
-	}
-}
-
 func TestRunTasksCompleteTextOutput(t *testing.T) {
 	const updatedJSON = `{
 		"kind": "tasks#task",
@@ -808,7 +696,7 @@ func TestRunTasksDelete(t *testing.T) {
 		writer: &buf,
 	}
 
-	err = runTasksDelete(context.Background(), conn, "TASKLIST123", "TASK123", false, out)
+	err = runTasksDelete(context.Background(), conn, "TASKLIST123", "TASK123", true, out)
 	if err != nil {
 		t.Fatalf("runTasksDelete() error = %v", err)
 	}
@@ -842,40 +730,12 @@ func TestRunTasksDeleteEmptyTaskID(t *testing.T) {
 		writer: &buf,
 	}
 
-	err = runTasksDelete(context.Background(), conn, "TASKLIST123", "", false, out)
+	err = runTasksDelete(context.Background(), conn, "TASKLIST123", "", true, out)
 	if err == nil {
 		t.Fatal("expected error for empty task ID, got nil")
 	}
 	if !strings.Contains(err.Error(), "task ID is required") {
 		t.Errorf("expected error message to contain 'task ID is required', got %q", err.Error())
-	}
-}
-
-func TestRunTasksDeleteEmptyTasklistID(t *testing.T) {
-	client := &http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			t.Fatal("HTTP request should not be made with empty tasklist ID")
-			return nil, nil
-		}),
-	}
-
-	conn, err := gwcli.NewFake(client)
-	if err != nil {
-		t.Fatalf("NewFake() error = %v", err)
-	}
-
-	var buf bytes.Buffer
-	out := &outputWriter{
-		json:   true,
-		writer: &buf,
-	}
-
-	err = runTasksDelete(context.Background(), conn, "", "TASK123", false, out)
-	if err == nil {
-		t.Fatal("expected error for empty tasklist ID, got nil")
-	}
-	if !strings.Contains(err.Error(), "task list ID is required") {
-		t.Errorf("expected error message to contain 'task list ID is required', got %q", err.Error())
 	}
 }
 
@@ -901,7 +761,7 @@ func TestRunTasksDeleteTextOutput(t *testing.T) {
 		writer: &buf,
 	}
 
-	err = runTasksDelete(context.Background(), conn, "TASKLIST123", "TASK123", false, out)
+	err = runTasksDelete(context.Background(), conn, "TASKLIST123", "TASK123", true, out)
 	if err != nil {
 		t.Fatalf("runTasksDelete() error = %v", err)
 	}

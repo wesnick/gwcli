@@ -94,7 +94,7 @@ The `CmdG` struct is the central object passed to all command handlers.
 - **`drive.go`** - `drive get`/`drive export`/`list`/`search`/`update` commands (general Drive file access by ID or URL, not email-specific; includes recursive folder export)
 - **`drive_write.go`** - Drive write/organize verbs: `mkdir`/`mv`/`rename`/`cp`/`rm`/`share`/`link`/`permissions` and the upload engine (multi-path, recursive, `--convert`, `--upsert`); shared `writeDriveFile` composable-JSON helper and idempotent `ensureDriveFolder`
 - **`tasklists.go`** - Task list operations (list, create, delete)
-- **`tasks.go`** - Task operations (list, read, create, complete, delete)
+- **`tasks.go`** - Task operations (list, get/read, create, update, complete, delete; `@default` list resolution, due-date parsing, subtask ordering)
 - **`keep.go`** - Google Keep notes (list, get, create, delete); service-account/DWD only. Handlers take a `keepClient` interface (not `*gwcli.CmdG`) so they can be tested with a fake
 
 Each command handler follows the pattern:
@@ -531,41 +531,78 @@ gwcli supports Google Tasks API for managing task lists and tasks.
 ### Task Lists
 
 ```bash
-# List all task lists
-gwcli tasklists list
-gwcli tasklists list --json
+# List all task lists (ID + title)
+gwcli tasks lists                       # same as: gwcli tasklists list
+gwcli tasks lists --json
 
 # Create a new task list
-gwcli tasklists create "Work Projects"
+gwcli tasks lists create --title "Work Projects"   # same as: gwcli tasklists create "Work Projects"
 
-# Delete a task list
-gwcli tasklists delete <tasklist-id>
-gwcli tasklists delete <tasklist-id> --force
+# Delete a task list (--force required)
+gwcli tasks lists delete <tasklist-id> --force
 ```
 
 ### Tasks
 
 ```bash
-# List tasks in a task list
-gwcli tasks list <tasklist-id>
-gwcli tasks list <tasklist-id> --include-completed
-gwcli tasks list <tasklist-id> --json
+# Every task command defaults to your primary list (@default);
+# pass --list-id/-l <tasklist-id> to target another list.
 
-# Create a new task
-gwcli tasks create <tasklist-id> --title "Review PR"
-gwcli tasks create <tasklist-id> --title "Review PR" --notes "Check tests" --due "2024-12-31T00:00:00Z"
+# List open tasks: [ ]/[x] status, title (subtasks indented under their parent), due date, ID
+gwcli tasks list
+gwcli tasks list --list-id <tasklist-id>
+gwcli tasks list --show-completed                      # include completed/hidden tasks
+gwcli tasks list --due 2026-10-01                      # due on that day
+gwcli tasks list --due-min 2026-10-01 --due-max 2026-10-07   # inclusive range
+gwcli tasks list --limit 50 --json
 
-# Read task details
-gwcli tasks read <tasklist-id> <task-id>
-gwcli tasks read <tasklist-id> <task-id> --json
+# Create a task (--due accepts YYYY-MM-DD or RFC3339; only the date is kept)
+gwcli tasks create --title "Review PR"
+gwcli tasks create --title "Submit report" --notes "Q4 summary" --due 2026-10-15 --list-id <tasklist-id>
+gwcli tasks create --title "Sub-step" --parent <parent-task-id>   # subtask
 
-# Mark task as completed
-gwcli tasks complete <tasklist-id> <task-id>
+# Task details, including parent and subtasks (--json adds "subtasks": [...])
+gwcli tasks get <task-id>
 
-# Delete a task
-gwcli tasks delete <tasklist-id> <task-id>
-gwcli tasks delete <tasklist-id> <task-id> --force
+# Update title/notes/due/status (only the flags you pass change)
+gwcli tasks update <task-id> --title "New title" --due 2026-10-20
+gwcli tasks update <task-id> --clear-due --clear-notes
+gwcli tasks update <task-id> --status needsAction      # reopen a completed task
+
+# Mark completed
+gwcli tasks complete <task-id>
+
+# Delete (--force required)
+gwcli tasks delete <task-id> --force
 ```
+
+The older positional forms still work: `tasks list <tasklist-id>`,
+`tasks create <tasklist-id> --title ...`, `tasks read|complete|delete
+<tasklist-id> <task-id>` (`read` is an alias of `get`), `--include-completed`
+(alias of `--show-completed`), and the `tasklists list|create|delete` group.
+
+Implementation notes (`tasks.go`, `tasklists.go`):
+- `resolveTasklistID` maps an empty list to `@default` (the API's alias for
+  the primary list). `resolveTaskRef` accepts `<task-id>` or the legacy
+  `<tasklist-id> <task-id>` (single-task commands take `Args []string`), and
+  errors if a positional list ID conflicts with `--list-id`.
+- `--due` goes through `normalizeTaskDue`/`parseTaskDate`: YYYY-MM-DD or
+  RFC3339, emitted as `YYYY-MM-DDT00:00:00.000Z`. The API discards the time,
+  so an RFC3339 value keeps the date *as written* (not shifted to UTC).
+  List filters (`taskDueRange`) send the day's end (`23:59:59Z`) as `dueMax`
+  so `--due`/`--due-max` are inclusive.
+- `tasks list` sets `showCompleted=false` explicitly (the API default is
+  true); `--show-completed` also sets `showHidden` (tasks completed in Google
+  apps are hidden). Both lists paginate at 100/page; `--limit` caps tasks.
+  `orderTasks` sorts by `position` and puts subtasks right after their parent.
+- `tasks get` finds subtasks by listing the task list (the API has no
+  children query) and filtering on `parent`.
+- `tasks update` is a PATCH built by `buildTaskPatch`; `--clear-*` and
+  reopening (`--status needsAction`, which also nulls `completed`) use
+  `NullFields`.
+- `tasks delete` / `tasks lists delete` / `tasklists delete` require `--force`.
+- Scope: `https://www.googleapis.com/auth/tasks`, already in the OAuth scope
+  set and the service-account DWD path (`ServiceAccountAuthenticator.TasksService`).
 
 ### Service Account Usage
 

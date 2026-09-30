@@ -254,7 +254,7 @@ func TestRunTasklistsDelete(t *testing.T) {
 		writer: &buf,
 	}
 
-	err = runTasklistsDelete(context.Background(), conn, "MTIzNDU2Nzg5MA", false, out)
+	err = runTasklistsDelete(context.Background(), conn, "MTIzNDU2Nzg5MA", true, out)
 	if err != nil {
 		t.Fatalf("runTasklistsDelete() error = %v", err)
 	}
@@ -288,7 +288,7 @@ func TestRunTasklistsDeleteEmptyID(t *testing.T) {
 		writer: &buf,
 	}
 
-	err = runTasklistsDelete(context.Background(), conn, "", false, out)
+	err = runTasklistsDelete(context.Background(), conn, "", true, out)
 	if err == nil {
 		t.Fatal("expected error for empty ID, got nil")
 	}
@@ -457,7 +457,7 @@ func TestRunTasklistsDeleteTextOutput(t *testing.T) {
 		writer: &buf,
 	}
 
-	err = runTasklistsDelete(context.Background(), conn, "MTIzNDU2Nzg5MA", false, out)
+	err = runTasklistsDelete(context.Background(), conn, "MTIzNDU2Nzg5MA", true, out)
 	if err != nil {
 		t.Fatalf("runTasklistsDelete() error = %v", err)
 	}
