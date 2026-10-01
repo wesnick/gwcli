@@ -312,37 +312,69 @@ type CLI struct {
 
 		Delete struct {
 			TasklistID string `arg:"" name:"tasklist-id" help:"ID of the task list to delete"`
-			Force      bool   `name:"force" short:"f" help:"Skip confirmation"`
+			Force      bool   `name:"force" short:"f" help:"Confirm deletion (required)"`
 		} `cmd:"" help:"Delete a task list"`
 	} `cmd:"" help:"Manage Google Tasks lists"`
 
 	Tasks struct {
+		Lists struct {
+			List struct{} `cmd:"" default:"1" help:"List all task lists (default)"`
+
+			Create struct {
+				Title     string `arg:"" optional:"" help:"Title for the new task list"`
+				TitleFlag string `name:"title" short:"t" help:"Title for the new task list"`
+			} `cmd:"" help:"Create a new task list"`
+
+			Delete struct {
+				TasklistID string `arg:"" name:"tasklist-id" help:"ID of the task list to delete"`
+				Force      bool   `name:"force" short:"f" help:"Confirm deletion (required)"`
+			} `cmd:"" help:"Delete a task list"`
+		} `cmd:"" help:"Manage task lists (same as the tasklists group)"`
+
 		List struct {
-			TasklistID       string `arg:"" name:"tasklist-id" help:"Task list ID"`
-			IncludeCompleted bool   `name:"include-completed" short:"a" help:"Include completed tasks"`
+			TasklistID    string `arg:"" optional:"" name:"tasklist-id" help:"Task list ID (positional form of --list-id)"`
+			ListID        string `name:"list-id" short:"l" help:"Task list ID (default: @default, the primary list)"`
+			ShowCompleted bool   `name:"show-completed" aliases:"include-completed" short:"a" help:"Include completed (and hidden) tasks"`
+			Due           string `name:"due" help:"Only tasks due on this date (YYYY-MM-DD or RFC3339)"`
+			DueMin        string `name:"due-min" help:"Only tasks due on or after this date (YYYY-MM-DD or RFC3339)"`
+			DueMax        string `name:"due-max" help:"Only tasks due on or before this date (YYYY-MM-DD or RFC3339)"`
+			Limit         int    `name:"limit" default:"0" help:"Max tasks (0 = no limit)"`
 		} `cmd:"" help:"List tasks in a task list"`
 
 		Create struct {
-			TasklistID string `arg:"" name:"tasklist-id" help:"Task list ID"`
+			TasklistID string `arg:"" optional:"" name:"tasklist-id" help:"Task list ID (positional form of --list-id)"`
+			ListID     string `name:"list-id" short:"l" help:"Task list ID (default: @default, the primary list)"`
 			Title      string `name:"title" short:"t" required:"" help:"Task title"`
 			Notes      string `name:"notes" short:"n" help:"Task notes"`
-			Due        string `name:"due" short:"d" help:"Due date (RFC3339 format)"`
+			Due        string `name:"due" short:"d" help:"Due date (YYYY-MM-DD or RFC3339; only the date is kept)"`
+			Parent     string `name:"parent" help:"Parent task ID (creates a subtask)"`
 		} `cmd:"" help:"Create a new task"`
 
-		Read struct {
-			TasklistID string `arg:"" name:"tasklist-id" help:"Task list ID"`
-			TaskID     string `arg:"" name:"task-id" help:"Task ID"`
-		} `cmd:"" help:"Get task details"`
+		Get struct {
+			Args   []string `arg:"" name:"task-id" help:"Task ID (legacy form: <tasklist-id> <task-id>)"`
+			ListID string   `name:"list-id" short:"l" help:"Task list ID (default: @default, the primary list)"`
+		} `cmd:"" aliases:"read" help:"Get task details, including subtasks"`
+
+		Update struct {
+			Args       []string `arg:"" name:"task-id" help:"Task ID (legacy form: <tasklist-id> <task-id>)"`
+			ListID     string   `name:"list-id" short:"l" help:"Task list ID (default: @default, the primary list)"`
+			Title      string   `name:"title" short:"t" help:"New title"`
+			Notes      string   `name:"notes" short:"n" help:"New notes"`
+			Due        string   `name:"due" short:"d" help:"New due date (YYYY-MM-DD or RFC3339)"`
+			Status     string   `name:"status" help:"New status: completed or needsAction"`
+			ClearNotes bool     `name:"clear-notes" help:"Remove the task's notes"`
+			ClearDue   bool     `name:"clear-due" help:"Remove the task's due date"`
+		} `cmd:"" help:"Update a task's title, notes, due date, or status"`
 
 		Complete struct {
-			TasklistID string `arg:"" name:"tasklist-id" help:"Task list ID"`
-			TaskID     string `arg:"" name:"task-id" help:"Task ID"`
+			Args   []string `arg:"" name:"task-id" help:"Task ID (legacy form: <tasklist-id> <task-id>)"`
+			ListID string   `name:"list-id" short:"l" help:"Task list ID (default: @default, the primary list)"`
 		} `cmd:"" help:"Mark a task as completed"`
 
 		Delete struct {
-			TasklistID string `arg:"" name:"tasklist-id" help:"Task list ID"`
-			TaskID     string `arg:"" name:"task-id" help:"Task ID"`
-			Force      bool   `name:"force" short:"f" help:"Skip confirmation"`
+			Args   []string `arg:"" name:"task-id" help:"Task ID (legacy form: <tasklist-id> <task-id>)"`
+			ListID string   `name:"list-id" short:"l" help:"Task list ID (default: @default, the primary list)"`
+			Force  bool     `name:"force" short:"f" help:"Confirm deletion (required)"`
 		} `cmd:"" help:"Delete a task"`
 	} `cmd:"" help:"Manage Google Tasks"`
 
@@ -1018,62 +1050,170 @@ func main() {
 			os.Exit(2)
 		}
 
-	case "tasks list <tasklist-id>":
+	case "tasks lists list":
 		cmdCtx := context.Background()
 		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
 		}
-		if err := runTasksList(cmdCtx, conn, cli.Tasks.List.TasklistID, cli.Tasks.List.IncludeCompleted, out); err != nil {
+		if err := runTasklistsList(cmdCtx, conn, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
 
-	case "tasks create <tasklist-id>":
+	case "tasks lists create", "tasks lists create <title>":
 		cmdCtx := context.Background()
+		title := cli.Tasks.Lists.Create.TitleFlag
+		if pos := cli.Tasks.Lists.Create.Title; pos != "" {
+			if title != "" && title != pos {
+				out.writeError(fmt.Errorf("task list title given twice (%q and --title %q)", pos, title))
+				os.Exit(2)
+			}
+			title = pos
+		}
 		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
 		}
-		if err := runTasksCreate(cmdCtx, conn, cli.Tasks.Create.TasklistID, cli.Tasks.Create.Title, cli.Tasks.Create.Notes, cli.Tasks.Create.Due, out); err != nil {
+		if err := runTasklistsCreate(cmdCtx, conn, title, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
 
-	case "tasks read <tasklist-id> <task-id>":
+	case "tasks lists delete <tasklist-id>":
 		cmdCtx := context.Background()
 		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
 		}
-		if err := runTasksRead(cmdCtx, conn, cli.Tasks.Read.TasklistID, cli.Tasks.Read.TaskID, out); err != nil {
+		if err := runTasklistsDelete(cmdCtx, conn, cli.Tasks.Lists.Delete.TasklistID, cli.Tasks.Lists.Delete.Force, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
 
-	case "tasks complete <tasklist-id> <task-id>":
+	case "tasks list", "tasks list <tasklist-id>":
 		cmdCtx := context.Background()
+		listID, err := resolveTasklistArg(cli.Tasks.List.TasklistID, cli.Tasks.List.ListID)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
 		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
 		}
-		if err := runTasksComplete(cmdCtx, conn, cli.Tasks.Complete.TasklistID, cli.Tasks.Complete.TaskID, out); err != nil {
+		opts := tasksListOptions{
+			tasklistID:    listID,
+			showCompleted: cli.Tasks.List.ShowCompleted,
+			due:           cli.Tasks.List.Due,
+			dueMin:        cli.Tasks.List.DueMin,
+			dueMax:        cli.Tasks.List.DueMax,
+			limit:         cli.Tasks.List.Limit,
+		}
+		if err := runTasksList(cmdCtx, conn, opts, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
 
-	case "tasks delete <tasklist-id> <task-id>":
+	case "tasks create", "tasks create <tasklist-id>":
 		cmdCtx := context.Background()
+		listID, err := resolveTasklistArg(cli.Tasks.Create.TasklistID, cli.Tasks.Create.ListID)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
 		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
 		if err != nil {
 			out.writeError(err)
 			os.Exit(3)
 		}
-		if err := runTasksDelete(cmdCtx, conn, cli.Tasks.Delete.TasklistID, cli.Tasks.Delete.TaskID, cli.Tasks.Delete.Force, out); err != nil {
+		opts := taskCreateOptions{
+			title:  cli.Tasks.Create.Title,
+			notes:  cli.Tasks.Create.Notes,
+			due:    cli.Tasks.Create.Due,
+			parent: cli.Tasks.Create.Parent,
+		}
+		if err := runTasksCreate(cmdCtx, conn, listID, opts, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "tasks get <task-id>":
+		cmdCtx := context.Background()
+		listID, taskID, err := resolveTaskRef(cli.Tasks.Get.Args, cli.Tasks.Get.ListID)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runTasksRead(cmdCtx, conn, listID, taskID, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "tasks update <task-id>":
+		cmdCtx := context.Background()
+		listID, taskID, err := resolveTaskRef(cli.Tasks.Update.Args, cli.Tasks.Update.ListID)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		opts := taskUpdateOptions{
+			title:      cli.Tasks.Update.Title,
+			notes:      cli.Tasks.Update.Notes,
+			due:        cli.Tasks.Update.Due,
+			status:     cli.Tasks.Update.Status,
+			clearNotes: cli.Tasks.Update.ClearNotes,
+			clearDue:   cli.Tasks.Update.ClearDue,
+		}
+		if err := runTasksUpdate(cmdCtx, conn, listID, taskID, opts, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "tasks complete <task-id>":
+		cmdCtx := context.Background()
+		listID, taskID, err := resolveTaskRef(cli.Tasks.Complete.Args, cli.Tasks.Complete.ListID)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runTasksComplete(cmdCtx, conn, listID, taskID, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "tasks delete <task-id>":
+		cmdCtx := context.Background()
+		listID, taskID, err := resolveTaskRef(cli.Tasks.Delete.Args, cli.Tasks.Delete.ListID)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runTasksDelete(cmdCtx, conn, listID, taskID, cli.Tasks.Delete.Force, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}

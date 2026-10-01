@@ -16,7 +16,7 @@ gwcli <resource> <action> [arguments] [flags]
 - **labels** - Gmail label management
 - **attachments** - Attachment operations
 - **filters** - Gmail filter management (list, get, create, delete)
-- **tasklists** - Google Task list operations
+- **tasklists** - Google Task list operations (also `tasks lists`)
 - **tasks** - Google Task operations
 - **calendars** - Google Calendar listing
 - **events** - Google Calendar event operations
@@ -725,13 +725,15 @@ and create a new one.
 
 ## Task Lists Commands
 
-### gwcli tasklists list
+`gwcli tasks lists ...` and `gwcli tasklists ...` are equivalent.
 
-List all Google Task lists.
+### gwcli tasks lists
+
+List all Google Task lists (paginated; all lists are returned).
 
 **Syntax:**
 ```bash
-gwcli tasklists list [flags]
+gwcli tasks lists [flags]          # same as: gwcli tasks lists list / gwcli tasklists list
 ```
 
 **Flags:**
@@ -744,86 +746,89 @@ gwcli tasklists list [flags]
 
 **Examples:**
 ```bash
-# List all task lists
-gwcli tasklists list
-
-# Get as JSON
-gwcli tasklists list --json
+gwcli tasks lists
+gwcli tasks lists --json | jq -r '.[] | "\(.id) \(.title)"'
 ```
 
-### gwcli tasklists create
+### gwcli tasks lists create
 
 Create a new task list.
 
 **Syntax:**
 ```bash
+gwcli tasks lists create --title <title> [flags]
 gwcli tasklists create <title> [flags]
 ```
 
 **Flags:**
+- `--title, -t <text>` - Task list title (or pass it positionally)
 - `--json` - Output result as JSON
 
 **Examples:**
 ```bash
-# Create task list
-gwcli tasklists create "Work Projects"
-
-# Create with JSON output
+gwcli tasks lists create --title "Work Projects"
 gwcli tasklists create "Personal Tasks" --json
 ```
 
-### gwcli tasklists delete
+### gwcli tasks lists delete
 
 Delete a task list.
 
 **Syntax:**
 ```bash
-gwcli tasklists delete <tasklist-id> [flags]
+gwcli tasks lists delete <tasklist-id> --force [flags]
+gwcli tasklists delete <tasklist-id> --force [flags]
 ```
 
 **Flags:**
-- `--force` - Required to confirm deletion
+- `--force, -f` - Required to confirm deletion (refuses without it)
 - `--json` - Output result as JSON
-
-**Examples:**
-```bash
-# Delete task list
-gwcli tasklists delete abc123 --force
-```
 
 ## Tasks Commands
 
+All task commands operate on the user's primary list (`@default`) unless
+`--list-id, -l <tasklist-id>` is given. Dates for `--due`, `--due-min`,
+`--due-max` accept `YYYY-MM-DD` or RFC3339; Google Tasks only stores the
+date, so the time is discarded (the date is taken as written, not shifted to
+UTC).
+
+Legacy positional forms are still accepted: `tasks list <tasklist-id>`,
+`tasks create <tasklist-id> --title ...`, and
+`tasks read|get|update|complete|delete <tasklist-id> <task-id>`.
+
 ### gwcli tasks list
 
-List tasks in a task list.
+List tasks in a task list. Subtasks are shown indented (`↳`) directly
+under their parent.
 
 **Syntax:**
 ```bash
-gwcli tasks list <tasklist-id> [flags]
+gwcli tasks list [--list-id <id>] [flags]
 ```
 
 **Flags:**
-- `--include-completed` - Include completed tasks
+- `--list-id, -l <id>` - Task list ID (default `@default`)
+- `--show-completed, -a` - Include completed and hidden tasks (alias: `--include-completed`). Without it only open tasks are listed.
+- `--due <date>` - Only tasks due on that day
+- `--due-min <date>` / `--due-max <date>` - Inclusive due-date range (cannot be combined with `--due`)
+- `--limit <n>` - Max tasks (0 = no limit, default)
 - `--json` - Output as JSON array
 
+**Text columns:** `STATUS` (`[ ]` open / `[x]` completed), `TITLE`, `DUE`, `ID`
+
 **Output Fields (JSON):**
-- `id` - Task ID
-- `title` - Task title
-- `notes` - Task notes
-- `status` - Task status (needsAction, completed)
-- `due` - Due date (RFC3339)
+- `id`, `title`, `notes`, `status` (`needsAction`/`completed`)
+- `due` - Due date (RFC3339, midnight UTC)
 - `completed` - Completion timestamp
+- `parent` - Parent task ID (subtasks only)
+- `position`, `updated`, `webViewLink`
 
 **Examples:**
 ```bash
-# List tasks
-gwcli tasks list abc123
-
-# Include completed tasks
-gwcli tasks list abc123 --include-completed
-
-# Get as JSON
-gwcli tasks list abc123 --json
+gwcli tasks list
+gwcli tasks list --list-id abc123 --show-completed
+gwcli tasks list --due 2026-10-01
+gwcli tasks list --due-min 2026-10-01 --due-max 2026-10-07 --json
 ```
 
 ### gwcli tasks create
@@ -832,46 +837,69 @@ Create a new task.
 
 **Syntax:**
 ```bash
-gwcli tasks create <tasklist-id> [flags]
+gwcli tasks create --title <text> [--list-id <id>] [flags]
 ```
 
 **Flags:**
-- `--title <text>` - Task title (required)
-- `--notes <text>` - Task notes
-- `--due <datetime>` - Due date (RFC3339 format)
-- `--json` - Output result as JSON
+- `--title, -t <text>` - Task title (required)
+- `--notes, -n <text>` - Task notes
+- `--due, -d <date>` - Due date (`YYYY-MM-DD` or RFC3339)
+- `--parent <task-id>` - Create as a subtask of this task
+- `--list-id, -l <id>` - Task list ID (default `@default`)
+- `--json` - Output created task as JSON
 
 **Examples:**
 ```bash
-# Create simple task
-gwcli tasks create abc123 --title "Review PR"
-
-# Create with notes and due date
-gwcli tasks create abc123 \
-  --title "Submit report" \
-  --notes "Q4 financial summary" \
-  --due "2025-01-15T00:00:00Z"
+gwcli tasks create --title "Review PR"
+gwcli tasks create --title "Submit report" --notes "Q4 summary" --due 2026-10-15 --list-id abc123
+gwcli tasks create --title "Collect numbers" --parent task456
 ```
 
-### gwcli tasks read
+### gwcli tasks get
 
-Read task details.
+Show task details: title, status, due, completion time, parent, notes,
+subtasks, and web link. `read` is an alias.
 
 **Syntax:**
 ```bash
-gwcli tasks read <tasklist-id> <task-id> [flags]
+gwcli tasks get <task-id> [--list-id <id>] [flags]
 ```
 
 **Flags:**
-- `--json` - Output as JSON
+- `--list-id, -l <id>` - Task list ID (default `@default`)
+- `--json` - Output as JSON (task fields plus `subtasks: [...]`)
 
 **Examples:**
 ```bash
-# Read task
-gwcli tasks read abc123 task456
+gwcli tasks get task456
+gwcli tasks get task456 --list-id abc123 --json
+```
 
-# Get as JSON
-gwcli tasks read abc123 task456 --json
+### gwcli tasks update
+
+Change a task's title, notes, due date, or status. Only the fields you pass
+change.
+
+**Syntax:**
+```bash
+gwcli tasks update <task-id> [--list-id <id>] [flags]
+```
+
+**Flags:**
+- `--title, -t <text>` - New title
+- `--notes, -n <text>` - New notes
+- `--due, -d <date>` - New due date
+- `--status <status>` - `completed` or `needsAction` (reopens a completed task)
+- `--clear-notes` - Remove notes
+- `--clear-due` - Remove the due date
+- `--list-id, -l <id>` - Task list ID (default `@default`)
+- `--json` - Output updated task as JSON
+
+**Examples:**
+```bash
+gwcli tasks update task456 --title "Review PR #42" --due 2026-10-20
+gwcli tasks update task456 --clear-due
+gwcli tasks update task456 --status needsAction
 ```
 
 ### gwcli tasks complete
@@ -880,17 +908,12 @@ Mark a task as completed.
 
 **Syntax:**
 ```bash
-gwcli tasks complete <tasklist-id> <task-id> [flags]
+gwcli tasks complete <task-id> [--list-id <id>] [flags]
 ```
 
 **Flags:**
+- `--list-id, -l <id>` - Task list ID (default `@default`)
 - `--json` - Output result as JSON
-
-**Examples:**
-```bash
-# Mark task as completed
-gwcli tasks complete abc123 task456
-```
 
 ### gwcli tasks delete
 
@@ -898,18 +921,13 @@ Delete a task.
 
 **Syntax:**
 ```bash
-gwcli tasks delete <tasklist-id> <task-id> [flags]
+gwcli tasks delete <task-id> --force [--list-id <id>] [flags]
 ```
 
 **Flags:**
-- `--force` - Required to confirm deletion
+- `--force, -f` - Required to confirm deletion (refuses without it)
+- `--list-id, -l <id>` - Task list ID (default `@default`)
 - `--json` - Output result as JSON
-
-**Examples:**
-```bash
-# Delete task
-gwcli tasks delete abc123 task456 --force
-```
 
 ## Calendars Commands
 

@@ -98,9 +98,11 @@ This table shows which scopes are required for each command group:
 | `tasklists create` | - | - | - | Required | - | - |
 | `tasklists delete` | - | - | - | Required | - | - |
 | **Tasks** |
+| `tasks lists` / `tasks lists create` / `tasks lists delete` | - | - | - | Required | - | - |
 | `tasks list` | - | - | - | Required | - | - |
-| `tasks read` | - | - | - | Required | - | - |
+| `tasks get` (`read`) | - | - | - | Required | - | - |
 | `tasks create` | - | - | - | Required | - | - |
+| `tasks update` | - | - | - | Required | - | - |
 | `tasks complete` | - | - | - | Required | - | - |
 | `tasks delete` | - | - | - | Required | - | - |
 | **Calendars** |
@@ -128,7 +130,7 @@ gwcli provides command-line access to Gmail, Google Tasks, and Google Calendar u
 
 - **Gmail**: Listing, reading, searching, and sending messages with attachments
 - **Gmail**: Label management and batch operations via stdin
-- **Tasks**: Managing task lists and tasks (create, read, complete, delete)
+- **Tasks**: Managing task lists and tasks (list, create, read, update, complete, delete; subtasks and due-date filters)
 - **Calendar**: Managing calendars and events (list, create, update, delete, search, conflicts, import)
 - **Filters**: Direct Gmail filter CRUD (list, get, create, delete)
 - **Drive**: Direct Drive file access (get, export, list, search, upload, update) plus detection of Drive doc links in emails (`artifacts`)
@@ -155,10 +157,10 @@ echo "msg1\nmsg2\nmsg3" | gwcli messages mark-read --stdin
 gwcli messages search "from:example.com" --json | jq '.[] | .subject'
 
 # List task lists
-gwcli --json tasklists list | jq '.[].title'
+gwcli --json tasks lists | jq '.[].title'
 
-# Create a task
-gwcli tasks create <tasklist-id> --title "Review code" --due "2025-01-15T00:00:00Z"
+# Create a task in your primary list
+gwcli tasks create --title "Review code" --due 2025-01-15
 
 # List upcoming calendar events
 gwcli events list --json | jq '.[].summary'
@@ -449,43 +451,55 @@ PDF export is not subject to the same cap).
 ### Task Lists
 
 ```bash
-# List all task lists
-gwcli tasklists list
+# List all task lists (ID + title)
+gwcli tasks lists                       # same as: gwcli tasklists list
+gwcli tasks lists --json
 
 # Create a new task list
-gwcli tasklists create "Work Projects"
+gwcli tasks lists create --title "Work Projects"   # same as: gwcli tasklists create "Work Projects"
 
-# Delete a task list
-gwcli tasklists delete <tasklist-id> --force
+# Delete a task list (--force required)
+gwcli tasks lists delete <tasklist-id> --force
 ```
 
 ### Tasks
 
 ```bash
-# List tasks in a task list
-gwcli tasks list <tasklist-id>
+# Every task command defaults to your primary list (@default);
+# pass --list-id/-l <tasklist-id> to target another list.
 
-# Include completed tasks
-gwcli tasks list <tasklist-id> --include-completed
+# List open tasks: [ ]/[x] status, title (subtasks indented under their parent), due date, ID
+gwcli tasks list
+gwcli tasks list --list-id <tasklist-id>
+gwcli tasks list --show-completed                      # include completed/hidden tasks
+gwcli tasks list --due 2026-10-01                      # due on that day
+gwcli tasks list --due-min 2026-10-01 --due-max 2026-10-07   # inclusive range
+gwcli tasks list --limit 50 --json
 
-# Create a new task
-gwcli tasks create <tasklist-id> --title "Review PR #42"
+# Create a task (--due accepts YYYY-MM-DD or RFC3339; only the date is kept)
+gwcli tasks create --title "Review PR"
+gwcli tasks create --title "Submit report" --notes "Q4 summary" --due 2026-10-15 --list-id <tasklist-id>
+gwcli tasks create --title "Sub-step" --parent <parent-task-id>   # subtask
 
-# Create task with notes and due date
-gwcli tasks create <tasklist-id> \
-  --title "Submit report" \
-  --notes "Q4 financial summary" \
-  --due "2025-01-15T00:00:00Z"
+# Task details, including parent and subtasks (--json adds "subtasks": [...])
+gwcli tasks get <task-id>
 
-# View task details
-gwcli tasks read <tasklist-id> <task-id>
+# Update title/notes/due/status (only the flags you pass change)
+gwcli tasks update <task-id> --title "New title" --due 2026-10-20
+gwcli tasks update <task-id> --clear-due --clear-notes
+gwcli tasks update <task-id> --status needsAction      # reopen a completed task
 
-# Mark task as completed
-gwcli tasks complete <tasklist-id> <task-id>
+# Mark completed
+gwcli tasks complete <task-id>
 
-# Delete a task
-gwcli tasks delete <tasklist-id> <task-id> --force
+# Delete (--force required)
+gwcli tasks delete <task-id> --force
 ```
+
+The older positional forms still work: `tasks list <tasklist-id>`,
+`tasks create <tasklist-id> --title ...`, `tasks read|complete|delete
+<tasklist-id> <task-id>` (`read` is an alias of `get`), `--include-completed`
+(alias of `--show-completed`), and the `tasklists list|create|delete` group.
 
 ### Google Keep (Workspace only)
 

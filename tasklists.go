@@ -24,14 +24,18 @@ func runTasklistsList(ctx context.Context, conn *gwcli.CmdG, out *outputWriter) 
 		return fmt.Errorf("tasks service not initialized")
 	}
 
-	resp, err := svc.Tasklists.List().Context(ctx).Do()
+	var items []*tasks.TaskList
+	err := svc.Tasklists.List().MaxResults(tasksPageSize).Pages(ctx, func(page *tasks.TaskLists) error {
+		items = append(items, page.Items...)
+		return nil
+	})
 	if err != nil {
 		return fmt.Errorf("failed to list task lists: %w", err)
 	}
 
 	if out.json {
-		output := make([]tasklistOutput, len(resp.Items))
-		for i, tl := range resp.Items {
+		output := make([]tasklistOutput, len(items))
+		for i, tl := range items {
 			output[i] = tasklistOutput{
 				ID:      tl.Id,
 				Title:   tl.Title,
@@ -42,8 +46,8 @@ func runTasklistsList(ctx context.Context, conn *gwcli.CmdG, out *outputWriter) 
 	}
 
 	headers := []string{"TITLE", "ID", "UPDATED"}
-	rows := make([][]string, len(resp.Items))
-	for i, tl := range resp.Items {
+	rows := make([][]string, len(items))
+	for i, tl := range items {
 		rows[i] = []string{tl.Title, tl.Id, formatTaskDate(tl.Updated)}
 	}
 	return out.writeTable(headers, rows)
@@ -95,6 +99,9 @@ func runTasklistsCreate(ctx context.Context, conn *gwcli.CmdG, title string, out
 func runTasklistsDelete(ctx context.Context, conn *gwcli.CmdG, tasklistID string, force bool, out *outputWriter) error {
 	if tasklistID == "" {
 		return fmt.Errorf("task list ID is required")
+	}
+	if !force {
+		return fmt.Errorf("refusing to delete task list %s without --force", tasklistID)
 	}
 
 	out.writeVerbose("Deleting task list %s...", tasklistID)
