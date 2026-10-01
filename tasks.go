@@ -146,8 +146,9 @@ func normalizeTaskDue(s string) (string, error) {
 
 // taskDueRange turns the list filters (--due for a single day, or
 // --due-min/--due-max as an inclusive range) into dueMin/dueMax API values.
-// The upper bound is the last second of the day so it is inclusive
-// regardless of how the API treats the boundary.
+// The API treats dueMax as exclusive at day granularity (a dueMax of
+// D 23:59:59 still excludes tasks due on D), so the upper bound is sent as
+// midnight of the following day to make --due/--due-max inclusive.
 func taskDueRange(due, dueMin, dueMax string) (string, string, error) {
 	if due != "" && (dueMin != "" || dueMax != "") {
 		return "", "", fmt.Errorf("--due cannot be combined with --due-min/--due-max")
@@ -168,7 +169,7 @@ func taskDueRange(due, dueMin, dueMax string) (string, string, error) {
 		if err != nil {
 			return "", "", err
 		}
-		hi = t.Add(24*time.Hour - time.Second).Format(time.RFC3339)
+		hi = t.AddDate(0, 0, 1).Format(time.RFC3339)
 	}
 	if lo != "" && hi != "" && lo > hi {
 		return "", "", fmt.Errorf("--due-min %s is after --due-max %s", dueMin, dueMax)

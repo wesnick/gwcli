@@ -152,10 +152,10 @@ func TestTaskDueRange(t *testing.T) {
 		wantErr             string
 	}{
 		{name: "none"},
-		{name: "single day", due: "2026-10-01", wantMin: "2026-10-01T00:00:00Z", wantMax: "2026-10-01T23:59:59Z"},
+		{name: "single day", due: "2026-10-01", wantMin: "2026-10-01T00:00:00Z", wantMax: "2026-10-02T00:00:00Z"},
 		{name: "min only", dueMin: "2026-10-01", wantMin: "2026-10-01T00:00:00Z"},
-		{name: "max only", dueMax: "2026-10-05", wantMax: "2026-10-05T23:59:59Z"},
-		{name: "range", dueMin: "2026-10-01", dueMax: "2026-10-05T12:00:00Z", wantMin: "2026-10-01T00:00:00Z", wantMax: "2026-10-05T23:59:59Z"},
+		{name: "max only", dueMax: "2026-10-05", wantMax: "2026-10-06T00:00:00Z"},
+		{name: "range", dueMin: "2026-10-01", dueMax: "2026-10-05T12:00:00Z", wantMin: "2026-10-01T00:00:00Z", wantMax: "2026-10-06T00:00:00Z"},
 		{name: "due with range", due: "2026-10-01", dueMin: "2026-10-01", wantErr: "cannot be combined"},
 		{name: "inverted", dueMin: "2026-10-05", dueMax: "2026-10-01", wantErr: "after"},
 		{name: "bad date", due: "soon", wantErr: "invalid date"},
@@ -328,7 +328,7 @@ func TestRunTasksListQueryParams(t *testing.T) {
 		{
 			name: "due day",
 			opts: tasksListOptions{tasklistID: "L1", due: "2026-10-01"},
-			want: map[string]string{"dueMin": "2026-10-01T00:00:00Z", "dueMax": "2026-10-01T23:59:59Z"},
+			want: map[string]string{"dueMin": "2026-10-01T00:00:00Z", "dueMax": "2026-10-02T00:00:00Z"},
 		},
 	}
 	for _, tt := range tests {

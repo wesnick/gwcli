@@ -589,8 +589,9 @@ Implementation notes (`tasks.go`, `tasklists.go`):
 - `--due` goes through `normalizeTaskDue`/`parseTaskDate`: YYYY-MM-DD or
   RFC3339, emitted as `YYYY-MM-DDT00:00:00.000Z`. The API discards the time,
   so an RFC3339 value keeps the date *as written* (not shifted to UTC).
-  List filters (`taskDueRange`) send the day's end (`23:59:59Z`) as `dueMax`
-  so `--due`/`--due-max` are inclusive.
+  The API's `dueMax` is exclusive at day granularity (`D 23:59:59Z` still
+  drops tasks due on D), so list filters (`taskDueRange`) send midnight of the
+  *next* day as `dueMax` to make `--due`/`--due-max` inclusive.
 - `tasks list` sets `showCompleted=false` explicitly (the API default is
   true); `--show-completed` also sets `showHidden` (tasks completed in Google
   apps are hidden). Both lists paginate at 100/page; `--limit` caps tasks.
