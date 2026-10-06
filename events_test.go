@@ -976,8 +976,10 @@ func TestParseReminderSpec(t *testing.T) {
 		{"15m", 15, "popup", false}, // Default to popup
 		{"0", 0, "popup", false},
 		{"4w", 40320, "popup", false},
-		{"5w", 0, "", true},  // over the API's 4-week max
-		{"-5m", 0, "", true}, // negative
+		{"5w", 0, "", true},                 // over the API's 4-week max
+		{"-5m", 0, "", true},                // negative
+		{"1829587348619263w", 0, "", true},  // would overflow int64
+		{"15m popup 1h email", 0, "", true}, // two specs in one flag
 		{"", 0, "", true},
 		{"invalid", 0, "", true},
 	}
@@ -1023,6 +1025,18 @@ func TestParseReminders(t *testing.T) {
 			input:   []string{"15m popup", "1h email"},
 			wantLen: 2,
 			wantErr: false,
+		},
+		{
+			name:    "five reminders (API max)",
+			input:   []string{"5m", "10m", "15m", "30m", "1h"},
+			wantLen: 5,
+			wantErr: false,
+		},
+		{
+			name:    "six reminders exceeds API max",
+			input:   []string{"5m", "10m", "15m", "30m", "1h", "2h"},
+			wantLen: 0,
+			wantErr: true,
 		},
 		{
 			name:    "invalid reminder",
