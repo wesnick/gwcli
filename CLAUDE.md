@@ -447,7 +447,10 @@ blob-download branch, folder rejection, and `wrapDriveErr` auth mapping as
 Drawings → PNG; uploaded files via `Files.Get(alt=media)`. `resolveDriveRef`
 runs the argument through `parseDriveURL`; a non-URL argument is treated as a
 raw file ID. Output conventions mirror `artifacts`/`attachments` (`--output`,
-`--output-dir` default `~/Downloads`, exit codes 2/3). `drive get` does not
+`--output-dir` default `~/Downloads`, exit codes 2/3). A relative
+`--output` is placed inside an explicit `--output-dir`
+(`resolveDriveExportOutput`); without `--output-dir` it is relative to the
+working directory, and with neither flag the file goes to `~/Downloads`. `drive get` does not
 download content but still needs the Drive scope (`Files.Get` metadata).
 
 `--export-format` overrides the per-type default for native docs:
