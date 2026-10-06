@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alecthomas/kong"
+
 	gwcli "github.com/wesnick/gwcli/pkg/gwcli"
 )
 
@@ -479,5 +481,71 @@ func TestRunDriveUpload_AsOverride(t *testing.T) {
 	}
 	if !strings.Contains(body, "application/vnd.google-apps.document") {
 		t.Fatalf("upload body missing document target mimeType from --as: %s", body)
+	}
+}
+
+func TestRunDriveExport_RelativeOutputUsesOutputDir(t *testing.T) {
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch {
+			case strings.HasSuffix(req.URL.Path, "/export"):
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("body"))}, nil
+			case strings.Contains(req.URL.Path, "/drive/v3/files/DOC123"):
+				meta := `{"id":"DOC123","name":"Plan","mimeType":"application/vnd.google-apps.document"}`
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(meta))}, nil
+			}
+			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+		}),
+	}
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	dir := filepath.Join(t.TempDir(), "exports")
+	var buf bytes.Buffer
+	out := &outputWriter{json: false, writer: &buf}
+	if err := runDriveExport(context.Background(), conn, "DOC123", "", dir, "plan.md", out); err != nil {
+		t.Fatalf("runDriveExport() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "plan.md")); err != nil {
+		t.Fatalf("expected export in --output-dir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cwd, "plan.md")); !os.IsNotExist(err) {
+		t.Fatalf("export also written to working directory (stat err = %v)", err)
+	}
+}
+
+func TestResolveDriveExportOutput(t *testing.T) {
+	cases := []struct {
+		dir, file, want string
+	}{
+		{"", "plan.md", "plan.md"},
+		{"/out", "plan.md", "/out/plan.md"},
+		{"/out", "sub/plan.md", "/out/sub/plan.md"},
+		{"/out", "/abs/plan.md", "/abs/plan.md"},
+	}
+	for _, c := range cases {
+		if got := resolveDriveExportOutput(c.dir, c.file); got != c.want {
+			t.Errorf("resolveDriveExportOutput(%q, %q) = %q, want %q", c.dir, c.file, got, c.want)
+		}
+	}
+}
+
+func TestParseDriveExportOutputDirDefault(t *testing.T) {
+	var cli CLI
+	parser, err := kong.New(&cli, kong.Name("gwcli"), kong.Exit(func(int) {}))
+	if err != nil {
+		t.Fatalf("kong.New: %v", err)
+	}
+	if _, err := parser.Parse([]string{"drive", "export", "DOC123", "--output", "plan.md"}); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	// Unset --output-dir must stay empty so a relative --output keeps
+	// resolving against the working directory.
+	if cli.Drive.Export.OutputDir != "" {
+		t.Errorf("OutputDir = %q, want empty", cli.Drive.Export.OutputDir)
 	}
 }

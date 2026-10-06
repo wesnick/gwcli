@@ -84,6 +84,22 @@ func runDriveGet(ctx context.Context, conn *gwcli.CmdG, ref string, out *outputW
 	return out.writeTable(headers, rows)
 }
 
+// defaultDriveExportDir is where `drive export` writes when neither
+// --output nor --output-dir is given.
+const defaultDriveExportDir = "~/Downloads"
+
+// resolveDriveExportOutput resolves --output against --output-dir: a relative
+// --output lands inside an explicitly given --output-dir; an absolute one (or
+// one given without --output-dir) is used as is, relative to the working
+// directory.
+func resolveDriveExportOutput(outputDir, outputFile string) string {
+	outputFile = expandPath(outputFile)
+	if outputDir == "" || filepath.IsAbs(outputFile) {
+		return outputFile
+	}
+	return filepath.Join(expandPath(outputDir), outputFile)
+}
+
 // runDriveExport exports (native Google-apps docs) or downloads (binary files)
 // a Drive file by ID or URL. Mirrors `artifacts download` output conventions.
 func runDriveExport(ctx context.Context, conn *gwcli.CmdG, ref, exportFormat, outputDir, outputFile string, out *outputWriter) error {
@@ -105,9 +121,12 @@ func runDriveExport(ctx context.Context, conn *gwcli.CmdG, ref, exportFormat, ou
 		return wrapDriveErr(err)
 	}
 	if meta.MimeType == driveFolderMime {
-		dest := expandPath(outputDir)
+		dest := expandPath(defaultDriveExportDir)
+		if outputDir != "" {
+			dest = expandPath(outputDir)
+		}
 		if outputFile != "" {
-			dest = expandPath(outputFile)
+			dest = resolveDriveExportOutput(outputDir, outputFile)
 		}
 		root := filepath.Join(dest, sanitizeFilename(meta.Name))
 		count, err := exportDriveFolder(ctx, conn, svc, art.ID, root, exportFormat)
@@ -132,8 +151,16 @@ func runDriveExport(ctx context.Context, conn *gwcli.CmdG, ref, exportFormat, ou
 
 	var outputPath string
 	if outputFile != "" {
-		outputPath = outputFile
+		outputPath = resolveDriveExportOutput(outputDir, outputFile)
+		if dir := filepath.Dir(outputPath); dir != "." {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return fmt.Errorf("failed to create output directory %s: %w", dir, err)
+			}
+		}
 	} else {
+		if outputDir == "" {
+			outputDir = defaultDriveExportDir
+		}
 		outputDir = expandPath(outputDir)
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
 			return fmt.Errorf("failed to create output directory %s: %w", outputDir, err)
