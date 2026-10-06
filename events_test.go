@@ -974,6 +974,12 @@ func TestParseReminderSpec(t *testing.T) {
 		{"2d email", 2880, "email", false},
 		{"1w popup", 10080, "popup", false},
 		{"15m", 15, "popup", false}, // Default to popup
+		{"0", 0, "popup", false},
+		{"4w", 40320, "popup", false},
+		{"5w", 0, "", true},                 // over the API's 4-week max
+		{"-5m", 0, "", true},                // negative
+		{"1829587348619263w", 0, "", true},  // would overflow int64
+		{"15m popup 1h email", 0, "", true}, // two specs in one flag
 		{"", 0, "", true},
 		{"invalid", 0, "", true},
 	}
@@ -1019,6 +1025,18 @@ func TestParseReminders(t *testing.T) {
 			input:   []string{"15m popup", "1h email"},
 			wantLen: 2,
 			wantErr: false,
+		},
+		{
+			name:    "five reminders (API max)",
+			input:   []string{"5m", "10m", "15m", "30m", "1h"},
+			wantLen: 5,
+			wantErr: false,
+		},
+		{
+			name:    "six reminders exceeds API max",
+			input:   []string{"5m", "10m", "15m", "30m", "1h", "2h"},
+			wantLen: 0,
+			wantErr: true,
 		},
 		{
 			name:    "invalid reminder",
@@ -1161,9 +1179,11 @@ func TestRunEventsCreateWithReminders(t *testing.T) {
 		t.Fatalf("runEventsCreate() error = %v", err)
 	}
 
-	// Verify that reminders were included in the request
-	// Note: Go's json marshaling omits false boolean values, so we check for
-	// the presence of overrides which indicates custom reminders
+	// Verify that reminders were included in the request. useDefault:false
+	// must be sent explicitly or the API rejects the overrides with a 400.
+	if !strings.Contains(capturedBody, `"useDefault":false`) {
+		t.Errorf("expected request body to contain useDefault:false, got %q", capturedBody)
+	}
 	if !strings.Contains(capturedBody, `"reminders"`) {
 		t.Errorf("expected request body to contain reminders field, got %q", capturedBody)
 	}
@@ -1187,6 +1207,22 @@ func TestRunEventsCreateWithReminders(t *testing.T) {
 	}
 	if len(result.Reminders.Overrides) != 2 {
 		t.Errorf("expected 2 reminder overrides, got %d", len(result.Reminders.Overrides))
+	}
+}
+
+func TestParseRemindersSendsZeroMinutes(t *testing.T) {
+	// A reminder at event start ("0") must still serialize minutes:0;
+	// otherwise the API rejects the override.
+	reminders, err := parseReminders([]string{"0 popup"})
+	if err != nil {
+		t.Fatalf("parseReminders() error = %v", err)
+	}
+	b, err := json.Marshal(reminders[0])
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if !strings.Contains(string(b), `"minutes":0`) {
+		t.Errorf("expected minutes:0 in serialized reminder, got %s", b)
 	}
 }
 

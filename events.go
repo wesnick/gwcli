@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -390,9 +391,13 @@ func runEventsCreate(ctx context.Context, conn *gwcli.CmdG, calendarID string, o
 		if err != nil {
 			return fmt.Errorf("failed to parse reminders: %w", err)
 		}
+		// UseDefault=false must be sent explicitly: the client library omits
+		// zero-valued fields, and the API rejects overrides with a 400 unless
+		// useDefault is false.
 		event.Reminders = &calendar.EventReminders{
-			UseDefault: false,
-			Overrides:  overrides,
+			UseDefault:      false,
+			Overrides:       overrides,
+			ForceSendFields: []string{"UseDefault"},
 		}
 	}
 
@@ -473,6 +478,9 @@ func parseReminders(specs []string) ([]*calendar.EventReminder, error) {
 	if len(specs) == 0 {
 		return nil, nil
 	}
+	if len(specs) > maxReminderOverrides {
+		return nil, fmt.Errorf("at most %d reminders are allowed per event, got %d", maxReminderOverrides, len(specs))
+	}
 
 	reminders := make([]*calendar.EventReminder, len(specs))
 	for i, spec := range specs {
@@ -480,13 +488,21 @@ func parseReminders(specs []string) ([]*calendar.EventReminder, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid reminder %q: %w", spec, err)
 		}
+		// Force Minutes so a "0" (at event start) reminder is not omitted.
 		reminders[i] = &calendar.EventReminder{
-			Method:  method,
-			Minutes: minutes,
+			Method:          method,
+			Minutes:         minutes,
+			ForceSendFields: []string{"Minutes"},
 		}
 	}
 	return reminders, nil
 }
+
+// Calendar API limits for reminder overrides.
+const (
+	maxReminderMinutes   = 40320 // 4 weeks
+	maxReminderOverrides = 5
+)
 
 // parseReminderSpec parses a single reminder specification like "15m popup" or "1h email".
 func parseReminderSpec(spec string) (minutes int64, method string, err error) {
@@ -499,11 +515,17 @@ func parseReminderSpec(spec string) (minutes int64, method string, err error) {
 	if len(parts) == 0 {
 		return 0, "", fmt.Errorf("empty reminder specification")
 	}
+	if len(parts) > 2 {
+		return 0, "", fmt.Errorf("expected '<duration> [popup|email]'; pass multiple reminders as separate --reminder flags")
+	}
 
 	// Parse duration
 	minutes, err = parseDurationToMinutes(parts[0])
 	if err != nil {
 		return 0, "", err
+	}
+	if minutes < 0 || minutes > maxReminderMinutes {
+		return 0, "", fmt.Errorf("reminder must be between 0 and %d minutes (4 weeks) before the event", maxReminderMinutes)
 	}
 
 	// Parse method (default to popup)
@@ -558,6 +580,9 @@ func parseDurationToMinutes(s string) (int64, error) {
 	num, err := strconv.ParseInt(numStr, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("invalid duration number %q: %w", numStr, err)
+	}
+	if num > math.MaxInt64/multiplier || num < math.MinInt64/multiplier {
+		return 0, fmt.Errorf("duration %q is too large", s)
 	}
 
 	return num * multiplier, nil
