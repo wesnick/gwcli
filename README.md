@@ -449,7 +449,7 @@ gwcli drive update <file-id|url> ./notes.md --if-revision <headRevisionId>
 
 `--convert` converts by extension to the native Google type. Markdown
 (`.md`/`.markdown`) is the exception: it always uploads as a native
-`text/markdown` file, which Drive previews and Docs edits in Markdown Mode.
+`text/markdown` file, stored byte-for-byte (see Native Markdown files).
 Converting Markdown to a Google Doc and exporting it back is lossy (YAML
 frontmatter and table alignment rows get rewritten), so pass `--as doc` only
 when a Doc is what you want.
@@ -462,11 +462,34 @@ PDF export is not subject to the same cap).
 #### Native Markdown files
 
 Drive stores `.md`/`.markdown` files as native Markdown: Drive renders a
-preview, and Docs opens them in Markdown Mode for rich editing, comments and
-real-time collaboration, saving back to Markdown. This is the recommended way
-to share Markdown, because converting to a Google Doc and exporting back is
-lossy. An agent writes the file, people edit and comment in Docs, and the
-agent reads the edits and comments back:
+preview, and Docs opens them in Markdown Mode. Uploading natively beats
+converting to a Google Doc, because Doc conversion corrupts YAML frontmatter.
+
+Native Markdown is faithful **storage**: upload, download, `drive update`
+and API comments never touch the bytes, and opening a file in Docs or the
+Drive preview without editing leaves it unchanged. **Saving from Docs is
+not faithful.** Any edit or comment in Docs Markdown Mode re-serializes the
+whole file:
+
+- YAML frontmatter is read as a rule plus a heading and saved as
+  `## title: … tags: \[a, b\]`. TOML `+++` frontmatter collapses to one
+  escaped line.
+- `[[wikilinks]]` are escaped to `\[\[wikilinks\]\]`; `> [!note]` callouts
+  are escaped and merged onto one line.
+- Table alignment rows are rewritten, `&nbsp;` paragraphs are inserted
+  between blocks, and the trailing newline is dropped.
+- Comments made in Docs are stored **in the file**: the anchored text is
+  wrapped in `<!-- gdoc_comment_begin: cN -->…<!-- gdoc_comment_end: cN -->`
+  and a trailing YAML block (`gdoc_comments:`) holds author, time, body and
+  quote. `drive comments` (the Drive comments API) does not see them; it only
+  sees comments made through the API.
+
+Footnotes, fenced code blocks, task lists, and YAML inside a fenced block or
+an HTML comment survive. Treat a changed `headRevisionId` on a file nobody
+pushed through gwcli as a Docs save, and check its content before trusting it.
+
+The commands for the storage loop, plus the edit and comment tooling for
+files where Docs fidelity is acceptable:
 
 ```bash
 # Write: upload a native Markdown file (never converted, even with --convert)
@@ -477,7 +500,7 @@ gwcli drive export <file-id> --output - --json > pull.json
 jq -r .content pull.json > plan.md
 rev=$(jq -r .headRevisionId pull.json)
 
-# Push: refused (exit 4) if someone edited the file in Docs since the pull
+# Push: refused (exit 4) if the file changed since the pull
 gwcli drive update <file-id> ./plan.md --if-revision "$rev" --json
 gwcli drive upload ./plan.md --folder <folder-id> --upsert --if-revision "$rev"
 

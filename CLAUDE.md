@@ -522,7 +522,7 @@ idempotent `ensureDriveFolder`. `--convert` converts by local extension to
 the native Google type (`driveConvertByExt`: csv/tsv/xls*→Sheet,
 txt/doc*/html→Doc, ppt*→Slides). Markdown (`.md`/`.markdown`) is
 deliberately absent from that map: it uploads as a native `text/markdown`
-file (Docs edits it in Markdown Mode; converting to a Doc and exporting back
+file (stored byte-for-byte; converting to a Doc and exporting back
 corrupts YAML frontmatter). `--as doc|sheet|slides|drawing|form`
 (or a raw `application/vnd.google-apps.*` type, `resolveDriveTargetMime`)
 forces the converted-to type, overriding extension inference, and implies
@@ -536,10 +536,14 @@ as `text/plain` and lands as a Doc even with the spreadsheet target.
 `name (1)`, `name (2)` on every rerun. `--name` is single-file only.
 
 **Native Markdown.** Drive keeps `.md`/`.markdown` files as native
-`text/markdown`; Docs edits them in Markdown Mode (comments, real-time
-collaboration) and saves back to Markdown. This is the recommended path for
-shared Markdown, because Doc conversion is lossy (exporting back rewrites
-YAML frontmatter and table alignment rows). So `.md` is deliberately absent
+`text/markdown` and stores them byte-for-byte; this is the recommended path
+for Markdown, because Doc conversion corrupts YAML frontmatter. A save from
+Docs Markdown Mode is not faithful: it re-serializes the file (YAML
+frontmatter becomes an H2, wikilinks and callouts are escaped, `&nbsp;`
+paragraphs appear) and stores Docs comments inline as
+`<!-- gdoc_comment_begin/end -->` markers plus a trailing `gdoc_comments:`
+YAML block, which the Drive comments API does not return. Opening without
+editing changes nothing. So `.md` is deliberately absent
 from `driveConvertByExt` (`--convert` leaves it native) while
 `driveSourceMimeByExt` declares `text/markdown` for both extensions; only
 `--as doc` converts. `driveUploadTargetMime` picks the target type. Exporting

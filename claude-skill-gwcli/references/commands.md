@@ -717,7 +717,7 @@ jq -r .content pull.json > plan.md
 rev=$(jq -r .headRevisionId pull.json)
 "$EDITOR" plan.md
 gwcli drive update "$fid" ./plan.md --if-revision "$rev"
-if [ $? -eq 4 ]; then echo "Edited in Docs since the pull: re-pull and merge"; fi
+if [ $? -eq 4 ]; then echo "Changed since the pull: re-pull and merge"; fi
 gwcli drive comments list "$fid" --json | jq -r '.[] | "\(.id)\t\(.content)"'
 ```
 

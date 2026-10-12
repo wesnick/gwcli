@@ -465,7 +465,7 @@ gwcli drive permissions <file-id|url>                        # who can access (a
 - `--convert` maps by local extension (csv/tsv/xls*→Sheet,
   txt/doc*/html→Doc, ppt*→Slides); other extensions upload as-is.
   Markdown (`.md`/`.markdown`) is never converted by `--convert`: it uploads
-  as a native `text/markdown` file that Docs edits in Markdown Mode (use
+  as a native `text/markdown` file, stored byte-for-byte (use
   `--as doc` to force a Google Doc). The
   source content type is declared by extension so Drive converts to the
   right native type instead of sniffing a `.csv` as text and making a Doc.
@@ -481,14 +481,38 @@ gwcli drive permissions <file-id|url>                        # who can access (a
 ### Native Markdown Files in Drive (recommended for shared Markdown)
 
 Drive keeps `.md`/`.markdown` files as native Markdown. Drive previews them,
-and Docs edits them in Markdown Mode with comments and real-time
-collaboration, saving back to Markdown. Prefer this over converting to a
-Google Doc: Doc conversion is lossy (exporting back rewrites YAML frontmatter
-and table alignment rows). `--convert` therefore never converts Markdown;
-only `--as doc` does.
+and Docs opens them in Markdown Mode. Prefer this over converting to a
+Google Doc: Doc conversion corrupts YAML frontmatter. `--convert` therefore
+never converts Markdown; only `--as doc` does.
 
-**The loop:** write the `.md`, people edit and comment in Docs, read the
-edits and comments back, push the merged result with a revision guard.
+**Known limitation: Drive is faithful storage, Docs is not a faithful
+editor.** Native Markdown is faithful **storage**: upload, download, `drive update`
+and API comments never touch the bytes, and opening a file in Docs or the
+Drive preview without editing leaves it unchanged. **Saving from Docs is
+not faithful.** Any edit or comment in Docs Markdown Mode re-serializes the
+whole file:
+
+- YAML frontmatter is read as a rule plus a heading and saved as
+  `## title: … tags: \[a, b\]`. TOML `+++` frontmatter collapses to one
+  escaped line.
+- `[[wikilinks]]` are escaped to `\[\[wikilinks\]\]`; `> [!note]` callouts
+  are escaped and merged onto one line.
+- Table alignment rows are rewritten, `&nbsp;` paragraphs are inserted
+  between blocks, and the trailing newline is dropped.
+- Comments made in Docs are stored **in the file**: the anchored text is
+  wrapped in `<!-- gdoc_comment_begin: cN -->…<!-- gdoc_comment_end: cN -->`
+  and a trailing YAML block (`gdoc_comments:`) holds author, time, body and
+  quote. `drive comments` (the Drive comments API) does not see them; it only
+  sees comments made through the API.
+
+Footnotes, fenced code blocks, task lists, and YAML inside a fenced block or
+an HTML comment survive. Treat a changed `headRevisionId` on a file nobody
+pushed through gwcli as a Docs save, and check its content before trusting it.
+
+**The loop:** write the `.md`, pull it back with its revision, push changes
+with a revision guard, and use API comments (`drive comments`) to talk about
+it. Ask people to comment in Docs only on files whose frontmatter and vault
+syntax don't matter.
 
 ```bash
 # Write: upload a native Markdown file (never converted, even with --convert)
@@ -499,7 +523,7 @@ gwcli drive export <file-id> --output - --json > pull.json
 jq -r .content pull.json > plan.md
 rev=$(jq -r .headRevisionId pull.json)
 
-# Push: refused (exit 4) if someone edited the file in Docs since the pull
+# Push: refused (exit 4) if the file changed since the pull
 gwcli drive update <file-id> ./plan.md --if-revision "$rev" --json
 gwcli drive upload ./plan.md --folder <folder-id> --upsert --if-revision "$rev"
 
@@ -531,6 +555,7 @@ gwcli drive to-md <doc-id|url> --folder <folder-id> --upsert --trash-original
 - `drive comments list` shows open comments by default
   (`--include-resolved`, `--include-deleted` widen it). JSON per comment:
   `id`, `author{displayName,emailAddress}` (Drive often omits the email),
+  covering API comments only (Docs comments on `.md` files live in the file),
   `content`, `quotedFileContent.value` (the text the comment was attached
   to), `anchor` (opaque, passed through), `resolved`, `createdTime`,
   `modifiedTime`, `replies[{id,author,content,action,createdTime}]`.
@@ -541,11 +566,10 @@ gwcli drive to-md <doc-id|url> --folder <folder-id> --upsert --trash-original
 - Comment anchors are opaque and may not line up with the text after
   `drive update` replaces the content. Use `quotedFileContent.value` to
   find what a comment was about.
-- Docs Markdown Mode is lossy at the edges: smart chips become text or
-  links, inline HTML becomes plain text, and colors, highlights and
-  alignment are dropped. Version history in Docs restores the original.
-  Don't assume YAML frontmatter survives a Docs edit: check it after
-  pulling a file a person edited.
+- A Docs save rewrites the file (see the known limitation above). Version
+  history in Docs restores the original. When pushing over a file someone
+  saved from Docs, keep its `gdoc_comment_begin/end` markers and trailing
+  `gdoc_comments:` block, or their comments are deleted.
 - `drive to-md <doc>` migrates a Doc to `<doc name>.md` in the Doc's folder
   (or `--folder`). Doc comments do not carry over: unresolved ones are
   counted, warned about on stderr, and returned as `droppedComments`.
