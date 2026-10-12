@@ -541,11 +541,14 @@ gwcli messages list --label "Invoices" --json | \
 General Google Drive access by file ID **or** Drive/Docs URL (not
 email-specific). Requires the full `https://www.googleapis.com/auth/drive`
 scope. Every write verb prints `id`/`name`/`mimeType`/`size`/`webViewLink`/
-`parents` with `--json` so results chain without a search round-trip.
+`parents` (plus `headRevisionId`/`md5Checksum` for uploaded files) with
+`--json` so results chain without a search round-trip.
 
 ### gwcli drive get
 
-Show file metadata only (no content download).
+Show file metadata only (no content download): id, name, mimeType, size,
+modifiedTime, headRevisionId, md5Checksum, webViewLink, owners.
+`headRevisionId`/`md5Checksum` are only set for uploaded (non-Google) files.
 
 ```bash
 gwcli drive get <file-id|url> [--json]
@@ -557,9 +560,17 @@ Export native Google docs (Docs→`.md`, Sheets→`.csv`, Slides/unknown→PDF,
 Drawings→PNG) or download binary files. A folder argument recurses and
 mirrors the tree locally.
 
+`--output -` writes the content to stdout with no confirmation message. With
+`--json`, it prints one object instead: `id`, `name`, `mimeType`,
+`modifiedTime`, `headRevisionId`, `md5Checksum`, `bytes` and `content`
+(UTF-8 text; non-UTF-8 content is refused in JSON mode). `-` is rejected for
+folders. A file export with `--json` (not `-`) also reports
+`headRevisionId`/`md5Checksum`.
+
 ```bash
 gwcli drive export <file-id|url> [--export-format pdf|md|docx|csv|...] \
-  [--output FILE] [--output-dir DIR]
+  [--output FILE|-] [--output-dir DIR]
+gwcli drive export <file-id> --output - --json | jq -r .content
 ```
 
 ### gwcli drive list / search
@@ -579,8 +590,9 @@ mirrored into Drive with idempotent folder creation).
 **Flags:**
 - `--folder <id|url>` - destination folder
 - `--name <name>` - rename (single file only)
-- `--convert` - convert to native Google type by extension (csv/tsv/xls*→Sheet, txt/md/doc*/html→Doc, ppt*→Slides)
+- `--convert` - convert to native Google type by extension (csv/tsv/xls*→Sheet, txt/doc*/html→Doc, ppt*→Slides); Markdown stays a native `text/markdown` file (use `--as doc` to convert)
 - `--upsert` - replace an existing same-name file in the destination instead of creating a duplicate (idempotent reruns)
+- `--if-revision <headRevisionId>` / `--if-md5 <md5>` - with `--upsert` and a single file: only replace if the existing file still matches (exit 4 on mismatch, or if the file is gone)
 
 ```bash
 gwcli drive upload ./report.pdf --folder <id> --name "Q3.pdf"
@@ -591,11 +603,56 @@ gwcli drive upload ./catalog.csv --folder <id> --upsert
 
 ### gwcli drive update
 
-Replace an existing file's content (optionally rename).
+Replace an existing file's content (optionally rename). `--if-revision` /
+`--if-md5` first re-read the file and refuse with exit code 4 if it changed
+since it was read (the error names the current revision). Drive has no
+conditional write, so this is check-then-write. Guarding a native Google
+file is an error (it has no `headRevisionId`).
 
 ```bash
-gwcli drive update <file-id|url> ./local-file [--name "New Name"]
+gwcli drive update <file-id|url> ./local-file [--name "New Name"] \
+  [--if-revision <headRevisionId>] [--if-md5 <md5>]
 ```
+
+### gwcli drive comments
+
+Read and answer Docs comments on a Drive file (the full `drive` scope covers
+them). Only unanchored comments can be created; `anchor` is passed through
+when listing, never constructed.
+
+```bash
+gwcli drive comments list <file-id|url> [--include-resolved] [--include-deleted] [--json]
+gwcli drive comments add <file-id|url> --content "text"            # --content - reads stdin
+gwcli drive comments reply <file-id|url> <comment-id> --content "text" [--resolve]
+gwcli drive comments resolve <file-id|url> <comment-id> [--content "closing note"]
+```
+
+`list` shows open comments by default; the table has one row per comment
+with a reply count. JSON per comment: `id`,
+`author{displayName,emailAddress}`, `content`, `quotedFileContent.value`,
+`anchor`, `resolved`, `createdTime`, `modifiedTime`,
+`replies[{id,author,content,action,createdTime}]`. `reply --resolve` and
+`resolve` post a reply with `action: resolve`; content is optional then.
+`reply`/`resolve` JSON: `fileId`, `commentId`, `reply{...}`, `resolved`.
+
+### gwcli drive to-md
+
+Migrate a Google Doc to a native Markdown file: export the Doc as
+`text/markdown` and create `<doc name>.md` in the Doc's parent folder (or
+`--folder`). Doc comments do not carry over; unresolved ones are counted,
+warned about on stderr, and returned as `droppedComments`.
+
+**Flags:**
+- `--folder <id|url>` - destination folder (default: the Doc's parent)
+- `--upsert` - replace an existing same-name `.md` file in the destination
+- `--trash-original` - trash the source Doc after the new file is written (reversible; no `--force`)
+
+```bash
+gwcli drive to-md <doc-id|url> [--folder <id>] [--upsert] [--trash-original] [--json]
+```
+
+JSON: the composable write shape plus `sourceId`, `sourceName`,
+`droppedComments`, `sourceTrashed`.
 
 ### gwcli drive mkdir
 
@@ -649,6 +706,19 @@ List who can access a file (audit before sharing internal notes).
 
 ```bash
 gwcli drive permissions <file-id|url> [--json]
+```
+
+### Native Markdown workflow example
+
+```bash
+# Pull content + revision, edit, push with a guard; read comments back
+gwcli drive export "$fid" --output - --json > pull.json
+jq -r .content pull.json > plan.md
+rev=$(jq -r .headRevisionId pull.json)
+"$EDITOR" plan.md
+gwcli drive update "$fid" ./plan.md --if-revision "$rev"
+if [ $? -eq 4 ]; then echo "Changed since the pull: re-pull and merge"; fi
+gwcli drive comments list "$fid" --json | jq -r '.[] | "\(.id)\t\(.content)"'
 ```
 
 ### Drive workflow example
@@ -1325,22 +1395,21 @@ gwcli --user user@example.com events list
 
 - `0` - Success
 - `1` - User error (invalid arguments)
-- `2` - API error
-- `3` - Authentication error
-- `4` - Not found
+- `2` - Command/API error
+- `3` - Authentication or configuration error
+- `4` - Drive write conflict: `--if-revision`/`--if-md5` no longer match
+  (re-pull, merge, push again)
 
 Use exit codes for error handling in scripts:
 
 ```bash
-if gwcli messages read "$msg_id" 2>/dev/null; then
-  echo "Success"
-else
-  case $? in
-    3) echo "Authentication failed" ;;
-    4) echo "Message not found" ;;
-    *) echo "Error occurred" ;;
-  esac
-fi
+gwcli drive update "$file_id" ./plan.md --if-revision "$rev"
+case $? in
+  0) echo "Pushed" ;;
+  3) echo "Authentication failed" ;;
+  4) echo "Changed since the pull: re-pull, merge, push again" ;;
+  *) echo "Error occurred" ;;
+esac
 ```
 
 ## Output Formats

@@ -16,6 +16,8 @@ type outputWriter struct {
 	noColor bool
 	verbose bool
 	writer  io.Writer
+	// errWriter receives warnings; nil means os.Stderr.
+	errWriter io.Writer
 }
 
 func newOutputWriter(useJSON, noColor, verbose bool) *outputWriter {
@@ -67,6 +69,16 @@ func (o *outputWriter) WriteEmptyList(textMessage string) error {
 // writeError outputs an error message to stderr
 func (o *outputWriter) writeError(err error) {
 	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+}
+
+// writeWarning outputs a warning to stderr (kept off stdout so JSON output
+// stays parseable).
+func (o *outputWriter) writeWarning(msg string) {
+	w := o.errWriter
+	if w == nil {
+		w = os.Stderr
+	}
+	fmt.Fprintf(w, "Warning: %s\n", msg)
 }
 
 // writeVerbose outputs a verbose message to stderr if verbose mode is enabled

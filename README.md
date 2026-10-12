@@ -432,6 +432,7 @@ gwcli drive get https://docs.google.com/document/d/<id>/edit --json
 gwcli drive export <file-id|url> --output notes.md
 gwcli drive export <file-id|url> --output-dir ~/Downloads
 gwcli drive export <file-id|url> --export-format pdf   # override per-type default
+gwcli drive export <file-id|url> --output -            # content to stdout
 
 # List / search (paginated, across all drives)
 gwcli drive list --query "mimeType='application/pdf'" --limit 50
@@ -440,13 +441,99 @@ gwcli drive search "quarterly plan"
 
 # Upload / replace content
 gwcli drive upload ./report.pdf --folder <folder-id> --name "Q3 Report.pdf"
+gwcli drive upload *.csv --folder <folder-id> --convert   # CSV->Sheet, DOCX->Doc, ...
+gwcli drive upload notes.md --folder <folder-id>          # stays a native Markdown file
 gwcli drive update <file-id|url> ./report.pdf --name "Q3 Report (final).pdf"
+gwcli drive update <file-id|url> ./notes.md --if-revision <headRevisionId>
 ```
+
+`--convert` converts by extension to the native Google type. Markdown
+(`.md`/`.markdown`) is the exception: it always uploads as a native
+`text/markdown` file, stored byte-for-byte (see Native Markdown files).
+Converting Markdown to a Google Doc and exporting it back is lossy (YAML
+frontmatter and table alignment rows get rewritten), so pass `--as doc` only
+when a Doc is what you want.
 
 `--export-format` accepts a friendly alias (`pdf`/`md`/`docx`/`xlsx`/`csv`/
 `png`/...) or a raw MIME type. Google Docs/Sheets/Slides `Files.Export` has a
 ~10 MB cap; gwcli detects this and suggests `--export-format pdf` (server-side
 PDF export is not subject to the same cap).
+
+#### Native Markdown files
+
+Drive stores `.md`/`.markdown` files as native Markdown: Drive renders a
+preview, and Docs opens them in Markdown Mode. Uploading natively beats
+converting to a Google Doc, because Doc conversion corrupts YAML frontmatter.
+
+Native Markdown is faithful **storage**: upload, download, `drive update`
+and API comments never touch the bytes, and opening a file in Docs or the
+Drive preview without editing leaves it unchanged. **Saving from Docs is
+not faithful.** Any edit or comment in Docs Markdown Mode re-serializes the
+whole file:
+
+- YAML frontmatter is read as a rule plus a heading and saved as
+  `## title: … tags: \[a, b\]`. TOML `+++` frontmatter collapses to one
+  escaped line.
+- `[[wikilinks]]` are escaped to `\[\[wikilinks\]\]`; `> [!note]` callouts
+  are escaped and merged onto one line.
+- Table alignment rows are rewritten, `&nbsp;` paragraphs are inserted
+  between blocks, and the trailing newline is dropped.
+- Comments made in Docs are stored **in the file**: the anchored text is
+  wrapped in `<!-- gdoc_comment_begin: cN -->…<!-- gdoc_comment_end: cN -->`
+  and a trailing YAML block (`gdoc_comments:`) holds author, time, body and
+  quote. `drive comments` (the Drive comments API) does not see them; it only
+  sees comments made through the API.
+
+Footnotes, fenced code blocks, task lists, and YAML inside a fenced block or
+an HTML comment survive. Treat a changed `headRevisionId` on a file nobody
+pushed through gwcli as a Docs save, and check its content before trusting it.
+
+The commands for the storage loop, plus the edit and comment tooling for
+files where Docs fidelity is acceptable:
+
+```bash
+# Write: upload a native Markdown file (never converted, even with --convert)
+gwcli drive upload ./plan.md --folder <folder-id> --json   # -> id, headRevisionId
+
+# Pull: content + the revision token in one call, no temp file
+gwcli drive export <file-id> --output - --json > pull.json
+jq -r .content pull.json > plan.md
+rev=$(jq -r .headRevisionId pull.json)
+
+# Push: refused (exit 4) if the file changed since the pull
+gwcli drive update <file-id> ./plan.md --if-revision "$rev" --json
+gwcli drive upload ./plan.md --folder <folder-id> --upsert --if-revision "$rev"
+
+# Comment loop: read what people said, answer, resolve
+gwcli drive comments list <file-id> --json                 # open comments
+gwcli drive comments list <file-id> --include-resolved
+gwcli drive comments add <file-id> --content "Updated the rollout dates"
+gwcli drive comments reply <file-id> <comment-id> --content "Fixed" --resolve
+gwcli drive comments resolve <file-id> <comment-id>
+echo "Long reply" | gwcli drive comments reply <file-id> <comment-id> --content -
+
+# Migrate an existing Google Doc to a native .md file
+gwcli drive to-md <doc-id|url> --json                      # -> droppedComments
+gwcli drive to-md <doc-id|url> --folder <folder-id> --upsert --trash-original
+```
+
+- `drive export --output -` writes the content to stdout. With `--json` it
+  prints one object with `content` (UTF-8 text) plus `headRevisionId`,
+  `md5Checksum` and `modifiedTime`. `drive get` also shows `headRevisionId`,
+  `md5Checksum` and `webViewLink`.
+- `--if-revision <headRevisionId>` / `--if-md5 <md5>` on `drive update` and
+  `drive upload --upsert` re-read the file before writing and refuse with
+  exit code 4 if it changed. Re-pull, merge, then push again. Drive has no
+  conditional write, so the check is racy, but it catches a person editing
+  the file between the pull and the push. Native Google files have no
+  revision checksum, so the guard applies to uploaded files such as
+  Markdown.
+- `drive comments` covers unanchored comments: `list` passes `anchor` and
+  `quotedFileContent` through, and `add` never creates an anchor.
+- `drive to-md` exports a Doc as Markdown into `<doc name>.md` in the Doc's
+  folder (or `--folder`). Doc comments do not carry over; the count of
+  unresolved ones is printed as a warning and returned as `droppedComments`.
+  `--trash-original` trashes the Doc afterwards (reversible).
 
 ### Task Lists
 

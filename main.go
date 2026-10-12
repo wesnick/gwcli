@@ -210,7 +210,7 @@ type CLI struct {
 			Ref          string `arg:"" required:"" name:"file" help:"Drive file ID or Drive/Docs URL"`
 			ExportFormat string `name:"export-format" help:"Override export format for native docs (alias e.g. pdf,md,docx,csv,xlsx or a raw MIME type)"`
 			OutputDir    string `help:"Output directory (default ~/Downloads); a relative --output is placed inside it" type:"path"`
-			Output       string `help:"Output filename (relative to --output-dir when given, else the current directory)"`
+			Output       string `help:"Output filename (relative to --output-dir when given, else the current directory); - writes to stdout"`
 		} `cmd:"" help:"Export/download a Google Drive file by ID or URL"`
 
 		List struct {
@@ -225,18 +225,22 @@ type CLI struct {
 		} `cmd:"" help:"Search Drive files by name/content"`
 
 		Upload struct {
-			Paths   []string `arg:"" required:"" name:"path" help:"Local file(s) or directory to upload"`
-			Folder  string   `name:"folder" help:"Destination folder ID or URL"`
-			Name    string   `name:"name" help:"Override the uploaded file name (single file only)"`
-			Convert bool     `name:"convert" help:"Convert to the native Google-apps type by extension (csv->Sheet, md->Doc, ...)"`
-			As      string   `name:"as" help:"Force the converted-to Google type, overriding extension inference: doc|sheet|slides|drawing|form or a raw application/vnd.google-apps.* type"`
-			Upsert  bool     `name:"upsert" help:"Replace an existing same-name file in the destination instead of creating a duplicate"`
+			Paths      []string `arg:"" required:"" name:"path" help:"Local file(s) or directory to upload"`
+			Folder     string   `name:"folder" help:"Destination folder ID or URL"`
+			Name       string   `name:"name" help:"Override the uploaded file name (single file only)"`
+			Convert    bool     `name:"convert" help:"Convert to the native Google-apps type by extension (csv->Sheet, docx->Doc, ...); Markdown stays a native .md file (use --as doc to convert it)"`
+			As         string   `name:"as" help:"Force the converted-to Google type, overriding extension inference: doc|sheet|slides|drawing|form or a raw application/vnd.google-apps.* type"`
+			Upsert     bool     `name:"upsert" help:"Replace an existing same-name file in the destination instead of creating a duplicate"`
+			IfRevision string   `name:"if-revision" help:"With --upsert: only replace if the existing file's headRevisionId still matches (exit 4 on mismatch)"`
+			IfMD5      string   `name:"if-md5" help:"With --upsert: only replace if the existing file's md5Checksum still matches (exit 4 on mismatch)"`
 		} `cmd:"" help:"Upload local file(s)/directory to Drive"`
 
 		Update struct {
-			Ref  string `arg:"" required:"" name:"file" help:"Drive file ID or Drive/Docs URL"`
-			Path string `arg:"" required:"" name:"path" type:"existingfile" help:"Local file with new content"`
-			Name string `name:"name" help:"Also rename the file"`
+			Ref        string `arg:"" required:"" name:"file" help:"Drive file ID or Drive/Docs URL"`
+			Path       string `arg:"" required:"" name:"path" type:"existingfile" help:"Local file with new content"`
+			Name       string `name:"name" help:"Also rename the file"`
+			IfRevision string `name:"if-revision" help:"Only write if the file's headRevisionId still matches (exit 4 on mismatch)"`
+			IfMD5      string `name:"if-md5" help:"Only write if the file's md5Checksum still matches (exit 4 on mismatch)"`
 		} `cmd:"" help:"Replace an existing Drive file's content"`
 
 		Mkdir struct {
@@ -286,6 +290,39 @@ type CLI struct {
 		Permissions struct {
 			Ref string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
 		} `cmd:"" help:"List who can access a Drive file"`
+
+		ToMd struct {
+			Ref           string `arg:"" required:"" name:"doc" help:"Google Doc ID or URL"`
+			Folder        string `name:"folder" help:"Destination folder ID or URL (default: the Doc's parent folder)"`
+			Upsert        bool   `name:"upsert" help:"Replace an existing same-name .md file in the destination instead of creating a duplicate"`
+			TrashOriginal bool   `name:"trash-original" help:"Trash the source Doc after the Markdown file is written (reversible)"`
+		} `cmd:"" name:"to-md" help:"Migrate a Google Doc to a native Markdown (.md) file"`
+
+		Comments struct {
+			List struct {
+				Ref             string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
+				IncludeResolved bool   `name:"include-resolved" help:"Include resolved comments"`
+				IncludeDeleted  bool   `name:"include-deleted" help:"Include deleted comments and replies"`
+			} `cmd:"" help:"List comments on a Drive file (open comments by default)"`
+
+			Add struct {
+				Ref     string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
+				Content string `name:"content" required:"" help:"Comment text (- to read from stdin)"`
+			} `cmd:"" help:"Add an unanchored comment to a Drive file"`
+
+			Reply struct {
+				Ref       string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
+				CommentID string `arg:"" required:"" name:"comment-id" help:"Comment ID"`
+				Content   string `name:"content" help:"Reply text (- to read from stdin); optional with --resolve"`
+				Resolve   bool   `name:"resolve" help:"Also resolve the comment"`
+			} `cmd:"" help:"Reply to a comment on a Drive file"`
+
+			Resolve struct {
+				Ref       string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
+				CommentID string `arg:"" required:"" name:"comment-id" help:"Comment ID"`
+				Content   string `name:"content" help:"Optional closing reply text (- to read from stdin)"`
+			} `cmd:"" help:"Resolve a comment on a Drive file"`
+		} `cmd:"" help:"Read and answer comments on a Drive file"`
 	} `cmd:"" help:"Google Drive operations"`
 
 	Filters struct {
@@ -840,9 +877,11 @@ func main() {
 		if err := runDriveUpload(cmdCtx, conn, cli.Drive.Upload.Paths,
 			cli.Drive.Upload.Folder, cli.Drive.Upload.Name,
 			cli.Drive.Upload.Convert, cli.Drive.Upload.Upsert,
-			cli.Drive.Upload.As, out); err != nil {
+			cli.Drive.Upload.As,
+			driveWriteGuard{Revision: cli.Drive.Upload.IfRevision, MD5: cli.Drive.Upload.IfMD5},
+			out); err != nil {
 			out.writeError(err)
-			os.Exit(2)
+			os.Exit(driveExitCode(err))
 		}
 
 	case "drive update <file> <path>":
@@ -853,9 +892,11 @@ func main() {
 			os.Exit(3)
 		}
 		if err := runDriveUpdate(cmdCtx, conn, cli.Drive.Update.Ref,
-			cli.Drive.Update.Path, cli.Drive.Update.Name, out); err != nil {
+			cli.Drive.Update.Path, cli.Drive.Update.Name,
+			driveWriteGuard{Revision: cli.Drive.Update.IfRevision, MD5: cli.Drive.Update.IfMD5},
+			out); err != nil {
 			out.writeError(err)
-			os.Exit(2)
+			os.Exit(driveExitCode(err))
 		}
 
 	case "drive mkdir <name>":
@@ -962,6 +1003,87 @@ func main() {
 			os.Exit(3)
 		}
 		if err := runDrivePermissions(cmdCtx, conn, cli.Drive.Permissions.Ref, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive to-md <doc>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveToMd(cmdCtx, conn, cli.Drive.ToMd.Ref, cli.Drive.ToMd.Folder,
+			cli.Drive.ToMd.Upsert, cli.Drive.ToMd.TrashOriginal, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive comments list <file>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveCommentsList(cmdCtx, conn, cli.Drive.Comments.List.Ref,
+			cli.Drive.Comments.List.IncludeResolved,
+			cli.Drive.Comments.List.IncludeDeleted, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive comments add <file>":
+		content, err := readCommentContent(cli.Drive.Comments.Add.Content, os.Stdin)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveCommentsAdd(cmdCtx, conn, cli.Drive.Comments.Add.Ref, content, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive comments reply <file> <comment-id>":
+		content, err := readCommentContent(cli.Drive.Comments.Reply.Content, os.Stdin)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveCommentsReply(cmdCtx, conn, cli.Drive.Comments.Reply.Ref,
+			cli.Drive.Comments.Reply.CommentID, content,
+			cli.Drive.Comments.Reply.Resolve, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive comments resolve <file> <comment-id>":
+		content, err := readCommentContent(cli.Drive.Comments.Resolve.Content, os.Stdin)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveCommentsReply(cmdCtx, conn, cli.Drive.Comments.Resolve.Ref,
+			cli.Drive.Comments.Resolve.CommentID, content, true, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}

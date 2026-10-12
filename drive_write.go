@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,12 +18,93 @@ const driveFolderMime = "application/vnd.google-apps.folder"
 
 // driveWriteFields is the field mask requested on every write so the JSON
 // result is composable (the next step can chain on id/webViewLink/parents
-// without a search round-trip).
-const driveWriteFields = "id,name,mimeType,size,webViewLink,parents"
+// without a search round-trip, and pass headRevisionId to the next guarded
+// write).
+const driveWriteFields = "id,name,mimeType,size,webViewLink,parents,headRevisionId,md5Checksum"
+
+// driveGuardFields is the metadata read by checkDriveWriteGuard.
+const driveGuardFields = "id,name,mimeType,modifiedTime,headRevisionId,md5Checksum"
+
+// errDriveConflict marks a guarded write refused because the Drive file
+// changed since the caller read it. Commands exit 4 on it (driveExitCode).
+var errDriveConflict = errors.New("drive file changed since it was read")
+
+// driveConflictError is the concrete error for a failed write guard.
+type driveConflictError struct {
+	msg string
+}
+
+func (e *driveConflictError) Error() string        { return e.msg }
+func (e *driveConflictError) Is(target error) bool { return target == errDriveConflict }
+
+// driveExitCode maps a Drive write error to the CLI exit code: 4 for a write
+// guard conflict, 2 otherwise.
+func driveExitCode(err error) int {
+	if errors.Is(err, errDriveConflict) {
+		return 4
+	}
+	return 2
+}
+
+// driveWriteGuard is the optimistic-concurrency precondition for a write:
+// the file's current headRevisionId and/or md5Checksum must match. Drive v3
+// has no conditional update, so this is check-then-write: racy, but it
+// catches a person editing the file in Docs between an agent's pull and push.
+type driveWriteGuard struct {
+	Revision string
+	MD5      string
+}
+
+func (g driveWriteGuard) empty() bool {
+	return g.Revision == "" && g.MD5 == ""
+}
+
+// checkDriveWriteGuard fetches fileID's current revision/checksum and returns
+// a *driveConflictError if they no longer match g. An empty guard is a no-op
+// (no API call).
+func checkDriveWriteGuard(ctx context.Context, svc *drive.Service, fileID string, g driveWriteGuard) error {
+	if g.empty() {
+		return nil
+	}
+	cur, err := svc.Files.Get(fileID).
+		Fields(driveGuardFields).
+		SupportsAllDrives(true).
+		Context(ctx).
+		Do()
+	if err != nil {
+		return wrapDriveErr(err)
+	}
+	return compareDriveWriteGuard(cur, g)
+}
+
+// compareDriveWriteGuard checks the guard against already-fetched metadata.
+func compareDriveWriteGuard(cur *drive.File, g driveWriteGuard) error {
+	if strings.HasPrefix(cur.MimeType, "application/vnd.google-apps.") || cur.HeadRevisionId == "" {
+		return fmt.Errorf("%q (%s) is a native Google file (%s), which has no "+
+			"headRevisionId/md5Checksum; --if-revision/--if-md5 only apply to "+
+			"uploaded files such as native Markdown", cur.Name, cur.Id, cur.MimeType)
+	}
+	repull := fmt.Sprintf("Re-pull it (gwcli drive export %s --output - --json), "+
+		"merge your changes, then push again with --if-revision %s.", cur.Id, cur.HeadRevisionId)
+	if g.Revision != "" && g.Revision != cur.HeadRevisionId {
+		return &driveConflictError{msg: fmt.Sprintf(
+			"%q (%s) changed since it was read: head revision is %s (expected %s), modified %s. %s",
+			cur.Name, cur.Id, cur.HeadRevisionId, g.Revision, cur.ModifiedTime, repull)}
+	}
+	if g.MD5 != "" && !strings.EqualFold(g.MD5, cur.Md5Checksum) {
+		return &driveConflictError{msg: fmt.Sprintf(
+			"%q (%s) changed since it was read: md5 is %s (expected %s), head revision %s, modified %s. %s",
+			cur.Name, cur.Id, cur.Md5Checksum, g.MD5, cur.HeadRevisionId, cur.ModifiedTime, repull)}
+	}
+	return nil
+}
 
 // driveConvertByExt maps a local file extension to the native Google-apps
 // mimeType to convert into on upload (--convert). Anything not listed is
-// uploaded as-is (no conversion).
+// uploaded as-is (no conversion). Markdown (.md/.markdown) is deliberately
+// absent: Drive and Docs handle native Markdown files directly, and converting
+// to a Doc and exporting back is lossy (it mangles YAML frontmatter and table
+// alignment rows). Use --as doc to force conversion anyway.
 var driveConvertByExt = map[string]string{
 	".csv":  "application/vnd.google-apps.spreadsheet",
 	".tsv":  "application/vnd.google-apps.spreadsheet",
@@ -30,7 +112,6 @@ var driveConvertByExt = map[string]string{
 	".xlsx": "application/vnd.google-apps.spreadsheet",
 	".ods":  "application/vnd.google-apps.spreadsheet",
 	".txt":  "application/vnd.google-apps.document",
-	".md":   "application/vnd.google-apps.document",
 	".rtf":  "application/vnd.google-apps.document",
 	".doc":  "application/vnd.google-apps.document",
 	".docx": "application/vnd.google-apps.document",
@@ -48,23 +129,24 @@ var driveConvertByExt = map[string]string{
 // mimeType — so without this a .csv is content-sniffed as text/plain and
 // imported as a Doc even when the target is google-apps.spreadsheet.
 var driveSourceMimeByExt = map[string]string{
-	".csv":  "text/csv",
-	".tsv":  "text/tab-separated-values",
-	".xls":  "application/vnd.ms-excel",
-	".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-	".ods":  "application/vnd.oasis.opendocument.spreadsheet",
-	".txt":  "text/plain",
-	".md":   "text/markdown",
-	".rtf":  "application/rtf",
-	".doc":  "application/msword",
-	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-	".odt":  "application/vnd.oasis.opendocument.text",
-	".html": "text/html",
-	".htm":  "text/html",
-	".ppt":  "application/vnd.ms-powerpoint",
-	".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-	".odp":  "application/vnd.oasis.opendocument.presentation",
-	".json": "application/json",
+	".csv":      "text/csv",
+	".tsv":      "text/tab-separated-values",
+	".xls":      "application/vnd.ms-excel",
+	".xlsx":     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	".ods":      "application/vnd.oasis.opendocument.spreadsheet",
+	".txt":      "text/plain",
+	".md":       "text/markdown",
+	".markdown": "text/markdown",
+	".rtf":      "application/rtf",
+	".doc":      "application/msword",
+	".docx":     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	".odt":      "application/vnd.oasis.opendocument.text",
+	".html":     "text/html",
+	".htm":      "text/html",
+	".ppt":      "application/vnd.ms-powerpoint",
+	".pptx":     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	".odp":      "application/vnd.oasis.opendocument.presentation",
+	".json":     "application/json",
 }
 
 // driveAsAliases maps the friendly --as values to native Google-apps
@@ -98,6 +180,19 @@ func resolveDriveTargetMime(as string) (string, error) {
 	return "", fmt.Errorf("unknown --as value %q (use doc, sheet, slides, drawing, form, or a raw application/vnd.google-apps.* type)", as)
 }
 
+// driveUploadTargetMime returns the metadata mimeType to request for an
+// upload of localPath: the --as override when set, else the --convert mapping
+// by extension, else "" (keep the file as uploaded).
+func driveUploadTargetMime(localPath string, convert bool, targetMimeOverride string) string {
+	if targetMimeOverride != "" {
+		return targetMimeOverride
+	}
+	if convert {
+		return driveConvertByExt[strings.ToLower(filepath.Ext(localPath))]
+	}
+	return ""
+}
+
 // driveMediaOption returns the explicit source-content-type media option for
 // localPath, or nil when the extension is unknown (let the library sniff).
 func driveMediaOption(localPath string) googleapi.MediaOption {
@@ -120,17 +215,30 @@ func driveQuoteValue(v string) string {
 // a one-line prose confirmation.
 func writeDriveFile(verb string, f *drive.File, out *outputWriter) error {
 	if out.json {
-		return out.writeJSON(map[string]interface{}{
-			"id":          f.Id,
-			"name":        f.Name,
-			"mimeType":    f.MimeType,
-			"size":        f.Size,
-			"webViewLink": f.WebViewLink,
-			"parents":     f.Parents,
-		})
+		return out.writeJSON(driveFileJSON(f))
 	}
 	out.writeMessage(fmt.Sprintf("%s: %s (id %s)", verb, f.Name, f.Id))
 	return nil
+}
+
+// driveFileJSON is the composable JSON shape of a written Drive file.
+// headRevisionId/md5Checksum are only set for uploaded (non-Google) files.
+func driveFileJSON(f *drive.File) map[string]interface{} {
+	m := map[string]interface{}{
+		"id":          f.Id,
+		"name":        f.Name,
+		"mimeType":    f.MimeType,
+		"size":        f.Size,
+		"webViewLink": f.WebViewLink,
+		"parents":     f.Parents,
+	}
+	if f.HeadRevisionId != "" {
+		m["headRevisionId"] = f.HeadRevisionId
+	}
+	if f.Md5Checksum != "" {
+		m["md5Checksum"] = f.Md5Checksum
+	}
+	return m
 }
 
 // driveSvc returns the connection's Drive client or an actionable error.
@@ -538,8 +646,9 @@ func runDrivePermissions(ctx context.Context, conn *gwcli.CmdG, ref string, out 
 
 // uploadOneFile uploads a single local file into parent. With convert it is
 // converted to the native Google-apps type for its extension; with upsert an
-// existing same-name file in the parent is replaced instead of duplicated.
-func uploadOneFile(ctx context.Context, svc *drive.Service, localPath, parent, name string, convert, upsert bool, targetMimeOverride string) (*drive.File, error) {
+// existing same-name file in the parent is replaced instead of duplicated,
+// after checking guard against it (a non-empty guard requires that file).
+func uploadOneFile(ctx context.Context, svc *drive.Service, localPath, parent, name string, convert, upsert bool, targetMimeOverride string, guard driveWriteGuard) (*drive.File, error) {
 	fh, err := os.Open(localPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open %s: %w", localPath, err)
@@ -549,15 +658,7 @@ func uploadOneFile(ctx context.Context, svc *drive.Service, localPath, parent, n
 	if name == "" {
 		name = filepath.Base(localPath)
 	}
-	targetMime := ""
-	switch {
-	case targetMimeOverride != "":
-		targetMime = targetMimeOverride
-	case convert:
-		if m, ok := driveConvertByExt[strings.ToLower(filepath.Ext(localPath))]; ok {
-			targetMime = m
-		}
-	}
+	targetMime := driveUploadTargetMime(localPath, convert, targetMimeOverride)
 
 	var mediaOpts []googleapi.MediaOption
 	if opt := driveMediaOption(localPath); opt != nil {
@@ -569,7 +670,15 @@ func uploadOneFile(ctx context.Context, svc *drive.Service, localPath, parent, n
 		if err != nil {
 			return nil, err
 		}
+		if existing == nil && !guard.empty() {
+			return nil, &driveConflictError{msg: fmt.Sprintf(
+				"no file named %q exists in the destination to check --if-revision/--if-md5 "+
+					"against (it was moved, renamed or deleted since it was read)", name)}
+		}
 		if existing != nil {
+			if err := checkDriveWriteGuard(ctx, svc, existing.Id, guard); err != nil {
+				return nil, err
+			}
 			meta := &drive.File{}
 			if targetMime != "" {
 				meta.MimeType = targetMime
@@ -639,7 +748,7 @@ func uploadTree(ctx context.Context, svc *drive.Service, root, parent string, co
 			return nil
 		}
 		parentID := dirFolderID[filepath.Clean(filepath.Dir(path))]
-		f, err := uploadOneFile(ctx, svc, path, parentID, "", convert, upsert, targetMimeOverride)
+		f, err := uploadOneFile(ctx, svc, path, parentID, "", convert, upsert, targetMimeOverride, driveWriteGuard{})
 		if err != nil {
 			return err
 		}
@@ -655,8 +764,9 @@ func uploadTree(ctx context.Context, svc *drive.Service, root, parent string, co
 // runDriveUpload uploads one or more local files/directories to Drive.
 // Directories are mirrored recursively; --convert converts by extension;
 // --upsert replaces an existing same-name file in the destination instead of
-// creating a duplicate (idempotent reruns).
-func runDriveUpload(ctx context.Context, conn *gwcli.CmdG, paths []string, folderRef, name string, convert, upsert bool, as string, out *outputWriter) error {
+// creating a duplicate (idempotent reruns); guard (--if-revision/--if-md5)
+// makes that replacement conditional and needs --upsert and a single file.
+func runDriveUpload(ctx context.Context, conn *gwcli.CmdG, paths []string, folderRef, name string, convert, upsert bool, as string, guard driveWriteGuard, out *outputWriter) error {
 	svc, err := driveSvc(conn)
 	if err != nil {
 		return err
@@ -676,6 +786,14 @@ func runDriveUpload(ctx context.Context, conn *gwcli.CmdG, paths []string, folde
 	if name != "" && len(paths) != 1 {
 		return fmt.Errorf("--name can only be used with a single file")
 	}
+	if !guard.empty() {
+		if !upsert {
+			return fmt.Errorf("--if-revision/--if-md5 require --upsert (a new upload has nothing to compare against)")
+		}
+		if len(paths) != 1 {
+			return fmt.Errorf("--if-revision/--if-md5 can only be used with a single file")
+		}
+	}
 
 	var results []*drive.File
 	for _, p := range paths {
@@ -688,6 +806,9 @@ func runDriveUpload(ctx context.Context, conn *gwcli.CmdG, paths []string, folde
 			if name != "" {
 				return fmt.Errorf("--name cannot be used when uploading a directory")
 			}
+			if !guard.empty() {
+				return fmt.Errorf("--if-revision/--if-md5 cannot be used when uploading a directory")
+			}
 			tree, err := uploadTree(ctx, svc, ep, parent, convert, upsert, targetMimeOverride)
 			if err != nil {
 				return err
@@ -695,7 +816,7 @@ func runDriveUpload(ctx context.Context, conn *gwcli.CmdG, paths []string, folde
 			results = append(results, tree...)
 			continue
 		}
-		f, err := uploadOneFile(ctx, svc, ep, parent, name, convert, upsert, targetMimeOverride)
+		f, err := uploadOneFile(ctx, svc, ep, parent, name, convert, upsert, targetMimeOverride, guard)
 		if err != nil {
 			return err
 		}
@@ -708,14 +829,7 @@ func runDriveUpload(ctx context.Context, conn *gwcli.CmdG, paths []string, folde
 		}
 		items := make([]map[string]interface{}, len(results))
 		for i, f := range results {
-			items[i] = map[string]interface{}{
-				"id":          f.Id,
-				"name":        f.Name,
-				"mimeType":    f.MimeType,
-				"size":        f.Size,
-				"webViewLink": f.WebViewLink,
-				"parents":     f.Parents,
-			}
+			items[i] = driveFileJSON(f)
 		}
 		return out.writeJSON(items)
 	}
