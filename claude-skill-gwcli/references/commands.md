@@ -579,7 +579,7 @@ mirrored into Drive with idempotent folder creation).
 **Flags:**
 - `--folder <id|url>` - destination folder
 - `--name <name>` - rename (single file only)
-- `--convert` - convert to native Google type by extension (csv/tsv/xls*→Sheet, txt/md/doc*/html→Doc, ppt*→Slides)
+- `--convert` - convert to native Google type by extension (csv/tsv/xls*→Sheet, txt/doc*/html→Doc, ppt*→Slides); Markdown stays a native `text/markdown` file (use `--as doc` to convert)
 - `--upsert` - replace an existing same-name file in the destination instead of creating a duplicate (idempotent reruns)
 
 ```bash

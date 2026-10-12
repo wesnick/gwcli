@@ -416,7 +416,7 @@ gwcli drive search "quarterly plan"
 
 # Write ops (full drive scope, unblocked since #40 took the full scope)
 gwcli drive upload ./report.pdf --folder <folder-id> --name "Q3 Report.pdf"
-gwcli drive upload *.csv --folder <folder-id> --convert       # CSV->Sheet, MD->Doc, ...
+gwcli drive upload *.csv --folder <folder-id> --convert       # CSV->Sheet, DOCX->Doc, ...
 gwcli drive upload notes.txt --folder <folder-id> --as sheet  # force converted-to type
 gwcli drive upload ./package-dir --folder <folder-id>          # recurses, mirrors structure
 gwcli drive upload ./01-catalog.csv --folder <folder-id> --upsert  # idempotent rerun
@@ -504,7 +504,10 @@ globs like `*.csv` expand to multiple args) and directories. A directory is
 walked recursively and mirrored into Drive, creating folders via the same
 idempotent `ensureDriveFolder`. `--convert` converts by local extension to
 the native Google type (`driveConvertByExt`: csv/tsv/xls*→Sheet,
-txt/md/doc*/html→Doc, ppt*→Slides). `--as doc|sheet|slides|drawing|form`
+txt/doc*/html→Doc, ppt*→Slides). Markdown (`.md`/`.markdown`) is
+deliberately absent from that map: it uploads as a native `text/markdown`
+file (Docs edits it in Markdown Mode; converting to a Doc and exporting back
+corrupts YAML frontmatter). `--as doc|sheet|slides|drawing|form`
 (or a raw `application/vnd.google-apps.*` type, `resolveDriveTargetMime`)
 forces the converted-to type, overriding extension inference, and implies
 conversion without `--convert`. Crucially, the upload always declares an

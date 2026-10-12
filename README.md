@@ -440,8 +440,17 @@ gwcli drive search "quarterly plan"
 
 # Upload / replace content
 gwcli drive upload ./report.pdf --folder <folder-id> --name "Q3 Report.pdf"
+gwcli drive upload *.csv --folder <folder-id> --convert   # CSV->Sheet, DOCX->Doc, ...
+gwcli drive upload notes.md --folder <folder-id>          # stays a native Markdown file
 gwcli drive update <file-id|url> ./report.pdf --name "Q3 Report (final).pdf"
 ```
+
+`--convert` converts by extension to the native Google type. Markdown
+(`.md`/`.markdown`) is the exception: it always uploads as a native
+`text/markdown` file, which Drive previews and Docs edits in Markdown Mode.
+Converting Markdown to a Google Doc and exporting it back is lossy (YAML
+frontmatter and table alignment rows get rewritten), so pass `--as doc` only
+when a Doc is what you want.
 
 `--export-format` accepts a friendly alias (`pdf`/`md`/`docx`/`xlsx`/`csv`/
 `png`/...) or a raw MIME type. Google Docs/Sheets/Slides `Files.Export` has a

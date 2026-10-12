@@ -22,7 +22,10 @@ const driveWriteFields = "id,name,mimeType,size,webViewLink,parents"
 
 // driveConvertByExt maps a local file extension to the native Google-apps
 // mimeType to convert into on upload (--convert). Anything not listed is
-// uploaded as-is (no conversion).
+// uploaded as-is (no conversion). Markdown (.md/.markdown) is deliberately
+// absent: Drive and Docs handle native Markdown files directly, and converting
+// to a Doc and exporting back is lossy (it mangles YAML frontmatter and table
+// alignment rows). Use --as doc to force conversion anyway.
 var driveConvertByExt = map[string]string{
 	".csv":  "application/vnd.google-apps.spreadsheet",
 	".tsv":  "application/vnd.google-apps.spreadsheet",
@@ -30,7 +33,6 @@ var driveConvertByExt = map[string]string{
 	".xlsx": "application/vnd.google-apps.spreadsheet",
 	".ods":  "application/vnd.google-apps.spreadsheet",
 	".txt":  "application/vnd.google-apps.document",
-	".md":   "application/vnd.google-apps.document",
 	".rtf":  "application/vnd.google-apps.document",
 	".doc":  "application/vnd.google-apps.document",
 	".docx": "application/vnd.google-apps.document",
@@ -48,23 +50,24 @@ var driveConvertByExt = map[string]string{
 // mimeType — so without this a .csv is content-sniffed as text/plain and
 // imported as a Doc even when the target is google-apps.spreadsheet.
 var driveSourceMimeByExt = map[string]string{
-	".csv":  "text/csv",
-	".tsv":  "text/tab-separated-values",
-	".xls":  "application/vnd.ms-excel",
-	".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-	".ods":  "application/vnd.oasis.opendocument.spreadsheet",
-	".txt":  "text/plain",
-	".md":   "text/markdown",
-	".rtf":  "application/rtf",
-	".doc":  "application/msword",
-	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-	".odt":  "application/vnd.oasis.opendocument.text",
-	".html": "text/html",
-	".htm":  "text/html",
-	".ppt":  "application/vnd.ms-powerpoint",
-	".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-	".odp":  "application/vnd.oasis.opendocument.presentation",
-	".json": "application/json",
+	".csv":      "text/csv",
+	".tsv":      "text/tab-separated-values",
+	".xls":      "application/vnd.ms-excel",
+	".xlsx":     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	".ods":      "application/vnd.oasis.opendocument.spreadsheet",
+	".txt":      "text/plain",
+	".md":       "text/markdown",
+	".markdown": "text/markdown",
+	".rtf":      "application/rtf",
+	".doc":      "application/msword",
+	".docx":     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	".odt":      "application/vnd.oasis.opendocument.text",
+	".html":     "text/html",
+	".htm":      "text/html",
+	".ppt":      "application/vnd.ms-powerpoint",
+	".pptx":     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	".odp":      "application/vnd.oasis.opendocument.presentation",
+	".json":     "application/json",
 }
 
 // driveAsAliases maps the friendly --as values to native Google-apps
@@ -96,6 +99,19 @@ func resolveDriveTargetMime(as string) (string, error) {
 		return as, nil
 	}
 	return "", fmt.Errorf("unknown --as value %q (use doc, sheet, slides, drawing, form, or a raw application/vnd.google-apps.* type)", as)
+}
+
+// driveUploadTargetMime returns the metadata mimeType to request for an
+// upload of localPath: the --as override when set, else the --convert mapping
+// by extension, else "" (keep the file as uploaded).
+func driveUploadTargetMime(localPath string, convert bool, targetMimeOverride string) string {
+	if targetMimeOverride != "" {
+		return targetMimeOverride
+	}
+	if convert {
+		return driveConvertByExt[strings.ToLower(filepath.Ext(localPath))]
+	}
+	return ""
 }
 
 // driveMediaOption returns the explicit source-content-type media option for
@@ -549,15 +565,7 @@ func uploadOneFile(ctx context.Context, svc *drive.Service, localPath, parent, n
 	if name == "" {
 		name = filepath.Base(localPath)
 	}
-	targetMime := ""
-	switch {
-	case targetMimeOverride != "":
-		targetMime = targetMimeOverride
-	case convert:
-		if m, ok := driveConvertByExt[strings.ToLower(filepath.Ext(localPath))]; ok {
-			targetMime = m
-		}
-	}
+	targetMime := driveUploadTargetMime(localPath, convert, targetMimeOverride)
 
 	var mediaOpts []googleapi.MediaOption
 	if opt := driveMediaOption(localPath); opt != nil {

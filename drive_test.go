@@ -386,15 +386,15 @@ func TestResolveExportFormat(t *testing.T) {
 
 func TestResolveDriveTargetMime(t *testing.T) {
 	cases := map[string]string{
-		"":             "",
-		"doc":          "application/vnd.google-apps.document",
-		"Document":     "application/vnd.google-apps.document",
-		"sheet":        "application/vnd.google-apps.spreadsheet",
-		"spreadsheet":  "application/vnd.google-apps.spreadsheet",
-		"slides":       "application/vnd.google-apps.presentation",
-		"presentation": "application/vnd.google-apps.presentation",
-		"drawing":      "application/vnd.google-apps.drawing",
-		"form":         "application/vnd.google-apps.form",
+		"":                                   "",
+		"doc":                                "application/vnd.google-apps.document",
+		"Document":                           "application/vnd.google-apps.document",
+		"sheet":                              "application/vnd.google-apps.spreadsheet",
+		"spreadsheet":                        "application/vnd.google-apps.spreadsheet",
+		"slides":                             "application/vnd.google-apps.presentation",
+		"presentation":                       "application/vnd.google-apps.presentation",
+		"drawing":                            "application/vnd.google-apps.drawing",
+		"form":                               "application/vnd.google-apps.form",
 		"application/vnd.google-apps.script": "application/vnd.google-apps.script",
 	}
 	for in, want := range cases {
@@ -547,5 +547,82 @@ func TestParseDriveExportOutputDirDefault(t *testing.T) {
 	// resolving against the working directory.
 	if cli.Drive.Export.OutputDir != "" {
 		t.Errorf("OutputDir = %q, want empty", cli.Drive.Export.OutputDir)
+	}
+}
+
+// TestDriveUploadMarkdownMapping pins Markdown as a native Drive file: it is
+// uploaded as text/markdown and only becomes a Google Doc via --as doc.
+func TestDriveUploadMarkdownMapping(t *testing.T) {
+	const docMime = "application/vnd.google-apps.document"
+	cases := []struct {
+		path    string
+		convert bool
+		as      string
+		want    string
+	}{
+		{"note.md", false, "", ""},
+		{"note.md", true, "", ""},
+		{"note.md", false, "doc", docMime},
+		{"note.md", true, "doc", docMime},
+		{"note.markdown", false, "", ""},
+		{"note.markdown", true, "", ""},
+		{"NOTE.MARKDOWN", true, "doc", docMime},
+		{"notes.txt", true, "", docMime},
+		{"data.csv", true, "", "application/vnd.google-apps.spreadsheet"},
+	}
+	for _, c := range cases {
+		override, err := resolveDriveTargetMime(c.as)
+		if err != nil {
+			t.Fatalf("resolveDriveTargetMime(%q): %v", c.as, err)
+		}
+		if got := driveUploadTargetMime(c.path, c.convert, override); got != c.want {
+			t.Errorf("driveUploadTargetMime(%q, convert=%v, as=%q) = %q, want %q",
+				c.path, c.convert, c.as, got, c.want)
+		}
+	}
+
+	for _, ext := range []string{".md", ".markdown"} {
+		if got := driveSourceMimeByExt[ext]; got != "text/markdown" {
+			t.Errorf("driveSourceMimeByExt[%q] = %q, want text/markdown", ext, got)
+		}
+		if got, ok := driveConvertByExt[ext]; ok {
+			t.Errorf("driveConvertByExt[%q] = %q, want no entry", ext, got)
+		}
+	}
+}
+
+// TestRunDriveUpload_ConvertKeepsMarkdownNative verifies --convert uploads a
+// .md file as text/markdown with no Google-apps target type.
+func TestRunDriveUpload_ConvertKeepsMarkdownNative(t *testing.T) {
+	var body string
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Path, "/upload/drive/v3/files") {
+				b, _ := io.ReadAll(req.Body)
+				body = string(b)
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"M1","name":"note.md","mimeType":"text/markdown"}`))}, nil
+			}
+			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+		}),
+	}
+	conn, err := gwcli.NewFake(client)
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "note.md")
+	if err := os.WriteFile(src, []byte("---\ntitle: x\n---\n# Hi\n"), 0644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER", "", true, false, "", out); err != nil {
+		t.Fatalf("runDriveUpload(convert md) error = %v", err)
+	}
+	if strings.Contains(body, "application/vnd.google-apps.") {
+		t.Fatalf("markdown upload requested a Google-apps conversion: %s", body)
+	}
+	if !strings.Contains(body, "text/markdown") {
+		t.Fatalf("upload body missing text/markdown source content type: %s", body)
 	}
 }
