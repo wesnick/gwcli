@@ -200,7 +200,7 @@ func TestRunDriveUpload(t *testing.T) {
 
 	var buf bytes.Buffer
 	out := &outputWriter{json: true, writer: &buf}
-	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER1", "", false, false, "", out); err != nil {
+	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER1", "", false, false, "", driveWriteGuard{}, out); err != nil {
 		t.Fatalf("runDriveUpload() error = %v", err)
 	}
 	var got map[string]interface{}
@@ -355,7 +355,7 @@ func TestRunDriveUpload_UpsertReplacesExisting(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	out := &outputWriter{json: true, writer: &buf}
-	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER", "", false, true, "", out); err != nil {
+	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER", "", false, true, "", driveWriteGuard{}, out); err != nil {
 		t.Fatalf("runDriveUpload(upsert) error = %v", err)
 	}
 	if updatedID != "EXIST" {
@@ -440,7 +440,7 @@ func TestRunDriveUpload_ConvertCSVToSheet(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	out := &outputWriter{json: true, writer: &buf}
-	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER", "", true, false, "", out); err != nil {
+	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER", "", true, false, "", driveWriteGuard{}, out); err != nil {
 		t.Fatalf("runDriveUpload(convert) error = %v", err)
 	}
 	if !strings.Contains(body, "application/vnd.google-apps.spreadsheet") {
@@ -476,7 +476,7 @@ func TestRunDriveUpload_AsOverride(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	out := &outputWriter{json: true, writer: &buf}
-	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER", "", false, false, "doc", out); err != nil {
+	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER", "", false, false, "doc", driveWriteGuard{}, out); err != nil {
 		t.Fatalf("runDriveUpload(as=doc) error = %v", err)
 	}
 	if !strings.Contains(body, "application/vnd.google-apps.document") {
@@ -616,7 +616,7 @@ func TestRunDriveUpload_ConvertKeepsMarkdownNative(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	out := &outputWriter{json: true, writer: &buf}
-	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER", "", true, false, "", out); err != nil {
+	if err := runDriveUpload(context.Background(), conn, []string{src}, "FOLDER", "", true, false, "", driveWriteGuard{}, out); err != nil {
 		t.Fatalf("runDriveUpload(convert md) error = %v", err)
 	}
 	if strings.Contains(body, "application/vnd.google-apps.") {

@@ -41,7 +41,8 @@ func runDriveGet(ctx context.Context, conn *gwcli.CmdG, ref string, out *outputW
 	}
 
 	f, err := svc.Files.Get(art.ID).
-		Fields("id,name,mimeType,size,modifiedTime,owners(displayName,emailAddress)").
+		Fields("id,name,mimeType,size,modifiedTime,headRevisionId,md5Checksum,webViewLink," +
+			"owners(displayName,emailAddress)").
 		SupportsAllDrives(true).
 		Context(ctx).
 		Do()
@@ -58,13 +59,16 @@ func runDriveGet(ctx context.Context, conn *gwcli.CmdG, ref string, out *outputW
 			})
 		}
 		return out.writeJSON(map[string]interface{}{
-			"id":           f.Id,
-			"name":         f.Name,
-			"mimeType":     f.MimeType,
-			"size":         f.Size,
-			"modifiedTime": f.ModifiedTime,
-			"owners":       owners,
-			"url":          canonicalDriveURL(f.Id, art.Type),
+			"id":             f.Id,
+			"name":           f.Name,
+			"mimeType":       f.MimeType,
+			"size":           f.Size,
+			"modifiedTime":   f.ModifiedTime,
+			"headRevisionId": f.HeadRevisionId,
+			"md5Checksum":    f.Md5Checksum,
+			"webViewLink":    f.WebViewLink,
+			"owners":         owners,
+			"url":            canonicalDriveURL(f.Id, art.Type),
 		})
 	}
 
@@ -79,8 +83,12 @@ func runDriveGet(ctx context.Context, conn *gwcli.CmdG, ref string, out *outputW
 			owner = f.Owners[0].DisplayName
 		}
 	}
-	headers := []string{"ID", "NAME", "MIME TYPE", "SIZE", "MODIFIED", "OWNER"}
-	rows := [][]string{{f.Id, f.Name, f.MimeType, sizeStr, f.ModifiedTime, owner}}
+	revision := f.HeadRevisionId
+	if revision == "" {
+		revision = "-"
+	}
+	headers := []string{"ID", "NAME", "MIME TYPE", "SIZE", "MODIFIED", "REVISION", "OWNER"}
+	rows := [][]string{{f.Id, f.Name, f.MimeType, sizeStr, f.ModifiedTime, revision, owner}}
 	return out.writeTable(headers, rows)
 }
 
@@ -112,8 +120,11 @@ func runDriveExport(ctx context.Context, conn *gwcli.CmdG, ref, exportFormat, ou
 	if err != nil {
 		return err
 	}
+	// Read the revision metadata before the content: if the file changes in
+	// between, the reported headRevisionId is older than the content, so a
+	// guarded write-back fails safe (a spurious conflict, never a lost edit).
 	meta, err := svc.Files.Get(art.ID).
-		Fields("id,name,mimeType").
+		Fields(driveGuardFields).
 		SupportsAllDrives(true).
 		Context(ctx).
 		Do()
@@ -174,9 +185,14 @@ func runDriveExport(ctx context.Context, conn *gwcli.CmdG, ref, exportFormat, ou
 
 	if out.json {
 		return out.writeJSON(map[string]interface{}{
-			"id":    art.ID,
-			"file":  outputPath,
-			"bytes": len(data),
+			"id":             art.ID,
+			"name":           meta.Name,
+			"mimeType":       meta.MimeType,
+			"modifiedTime":   meta.ModifiedTime,
+			"headRevisionId": meta.HeadRevisionId,
+			"md5Checksum":    meta.Md5Checksum,
+			"file":           outputPath,
+			"bytes":          len(data),
 		})
 	}
 	out.writeMessage(fmt.Sprintf("Exported: %s (%s)", outputPath, formatSize(int64(len(data)))))
@@ -354,8 +370,10 @@ func runDriveSearch(ctx context.Context, conn *gwcli.CmdG, term string, limit in
 }
 
 // runDriveUpdate replaces the content of an existing Drive file with a local
-// file. name, when set, also renames the file.
-func runDriveUpdate(ctx context.Context, conn *gwcli.CmdG, ref, path, name string, out *outputWriter) error {
+// file. name, when set, also renames the file. A non-empty guard
+// (--if-revision/--if-md5) refuses the write with a *driveConflictError when
+// the file changed since it was read.
+func runDriveUpdate(ctx context.Context, conn *gwcli.CmdG, ref, path, name string, guard driveWriteGuard, out *outputWriter) error {
 	art, err := resolveDriveRef(ref)
 	if err != nil {
 		return err
@@ -363,6 +381,9 @@ func runDriveUpdate(ctx context.Context, conn *gwcli.CmdG, ref, path, name strin
 
 	svc, err := driveSvc(conn)
 	if err != nil {
+		return err
+	}
+	if err := checkDriveWriteGuard(ctx, svc, art.ID, guard); err != nil {
 		return err
 	}
 

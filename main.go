@@ -225,18 +225,22 @@ type CLI struct {
 		} `cmd:"" help:"Search Drive files by name/content"`
 
 		Upload struct {
-			Paths   []string `arg:"" required:"" name:"path" help:"Local file(s) or directory to upload"`
-			Folder  string   `name:"folder" help:"Destination folder ID or URL"`
-			Name    string   `name:"name" help:"Override the uploaded file name (single file only)"`
-			Convert bool     `name:"convert" help:"Convert to the native Google-apps type by extension (csv->Sheet, docx->Doc, ...); Markdown stays a native .md file (use --as doc to convert it)"`
-			As      string   `name:"as" help:"Force the converted-to Google type, overriding extension inference: doc|sheet|slides|drawing|form or a raw application/vnd.google-apps.* type"`
-			Upsert  bool     `name:"upsert" help:"Replace an existing same-name file in the destination instead of creating a duplicate"`
+			Paths      []string `arg:"" required:"" name:"path" help:"Local file(s) or directory to upload"`
+			Folder     string   `name:"folder" help:"Destination folder ID or URL"`
+			Name       string   `name:"name" help:"Override the uploaded file name (single file only)"`
+			Convert    bool     `name:"convert" help:"Convert to the native Google-apps type by extension (csv->Sheet, docx->Doc, ...); Markdown stays a native .md file (use --as doc to convert it)"`
+			As         string   `name:"as" help:"Force the converted-to Google type, overriding extension inference: doc|sheet|slides|drawing|form or a raw application/vnd.google-apps.* type"`
+			Upsert     bool     `name:"upsert" help:"Replace an existing same-name file in the destination instead of creating a duplicate"`
+			IfRevision string   `name:"if-revision" help:"With --upsert: only replace if the existing file's headRevisionId still matches (exit 4 on mismatch)"`
+			IfMD5      string   `name:"if-md5" help:"With --upsert: only replace if the existing file's md5Checksum still matches (exit 4 on mismatch)"`
 		} `cmd:"" help:"Upload local file(s)/directory to Drive"`
 
 		Update struct {
-			Ref  string `arg:"" required:"" name:"file" help:"Drive file ID or Drive/Docs URL"`
-			Path string `arg:"" required:"" name:"path" type:"existingfile" help:"Local file with new content"`
-			Name string `name:"name" help:"Also rename the file"`
+			Ref        string `arg:"" required:"" name:"file" help:"Drive file ID or Drive/Docs URL"`
+			Path       string `arg:"" required:"" name:"path" type:"existingfile" help:"Local file with new content"`
+			Name       string `name:"name" help:"Also rename the file"`
+			IfRevision string `name:"if-revision" help:"Only write if the file's headRevisionId still matches (exit 4 on mismatch)"`
+			IfMD5      string `name:"if-md5" help:"Only write if the file's md5Checksum still matches (exit 4 on mismatch)"`
 		} `cmd:"" help:"Replace an existing Drive file's content"`
 
 		Mkdir struct {
@@ -866,9 +870,11 @@ func main() {
 		if err := runDriveUpload(cmdCtx, conn, cli.Drive.Upload.Paths,
 			cli.Drive.Upload.Folder, cli.Drive.Upload.Name,
 			cli.Drive.Upload.Convert, cli.Drive.Upload.Upsert,
-			cli.Drive.Upload.As, out); err != nil {
+			cli.Drive.Upload.As,
+			driveWriteGuard{Revision: cli.Drive.Upload.IfRevision, MD5: cli.Drive.Upload.IfMD5},
+			out); err != nil {
 			out.writeError(err)
-			os.Exit(2)
+			os.Exit(driveExitCode(err))
 		}
 
 	case "drive update <file> <path>":
@@ -879,9 +885,11 @@ func main() {
 			os.Exit(3)
 		}
 		if err := runDriveUpdate(cmdCtx, conn, cli.Drive.Update.Ref,
-			cli.Drive.Update.Path, cli.Drive.Update.Name, out); err != nil {
+			cli.Drive.Update.Path, cli.Drive.Update.Name,
+			driveWriteGuard{Revision: cli.Drive.Update.IfRevision, MD5: cli.Drive.Update.IfMD5},
+			out); err != nil {
 			out.writeError(err)
-			os.Exit(2)
+			os.Exit(driveExitCode(err))
 		}
 
 	case "drive mkdir <name>":
