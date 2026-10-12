@@ -286,6 +286,32 @@ type CLI struct {
 		Permissions struct {
 			Ref string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
 		} `cmd:"" help:"List who can access a Drive file"`
+
+		Comments struct {
+			List struct {
+				Ref             string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
+				IncludeResolved bool   `name:"include-resolved" help:"Include resolved comments"`
+				IncludeDeleted  bool   `name:"include-deleted" help:"Include deleted comments and replies"`
+			} `cmd:"" help:"List comments on a Drive file (open comments by default)"`
+
+			Add struct {
+				Ref     string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
+				Content string `name:"content" required:"" help:"Comment text (- to read from stdin)"`
+			} `cmd:"" help:"Add an unanchored comment to a Drive file"`
+
+			Reply struct {
+				Ref       string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
+				CommentID string `arg:"" required:"" name:"comment-id" help:"Comment ID"`
+				Content   string `name:"content" help:"Reply text (- to read from stdin); optional with --resolve"`
+				Resolve   bool   `name:"resolve" help:"Also resolve the comment"`
+			} `cmd:"" help:"Reply to a comment on a Drive file"`
+
+			Resolve struct {
+				Ref       string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
+				CommentID string `arg:"" required:"" name:"comment-id" help:"Comment ID"`
+				Content   string `name:"content" help:"Optional closing reply text (- to read from stdin)"`
+			} `cmd:"" help:"Resolve a comment on a Drive file"`
+		} `cmd:"" help:"Read and answer comments on a Drive file"`
 	} `cmd:"" help:"Google Drive operations"`
 
 	Filters struct {
@@ -962,6 +988,74 @@ func main() {
 			os.Exit(3)
 		}
 		if err := runDrivePermissions(cmdCtx, conn, cli.Drive.Permissions.Ref, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive comments list <file>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveCommentsList(cmdCtx, conn, cli.Drive.Comments.List.Ref,
+			cli.Drive.Comments.List.IncludeResolved,
+			cli.Drive.Comments.List.IncludeDeleted, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive comments add <file>":
+		content, err := readCommentContent(cli.Drive.Comments.Add.Content, os.Stdin)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveCommentsAdd(cmdCtx, conn, cli.Drive.Comments.Add.Ref, content, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive comments reply <file> <comment-id>":
+		content, err := readCommentContent(cli.Drive.Comments.Reply.Content, os.Stdin)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveCommentsReply(cmdCtx, conn, cli.Drive.Comments.Reply.Ref,
+			cli.Drive.Comments.Reply.CommentID, content,
+			cli.Drive.Comments.Reply.Resolve, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive comments resolve <file> <comment-id>":
+		content, err := readCommentContent(cli.Drive.Comments.Resolve.Content, os.Stdin)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveCommentsReply(cmdCtx, conn, cli.Drive.Comments.Resolve.Ref,
+			cli.Drive.Comments.Resolve.CommentID, content, true, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
