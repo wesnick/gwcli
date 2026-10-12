@@ -392,7 +392,8 @@ Drive/Docs URL — no email involved. All of it needs the full
 
 **Read / fetch:**
 ```bash
-# Metadata only (no download): id, name, mimeType, size, modifiedTime, owners
+# Metadata only (no download): id, name, mimeType, size, modifiedTime,
+# headRevisionId, md5Checksum, webViewLink, owners
 gwcli drive get <file-id|url>
 gwcli drive get https://docs.google.com/document/d/<id>/edit --json
 
@@ -401,6 +402,8 @@ gwcli drive get https://docs.google.com/document/d/<id>/edit --json
 gwcli drive export <file-id|url> --output notes.md
 gwcli drive export <file-id|url> --export-format pdf --output-dir ./out
 gwcli drive export <folder-id|url> --output-dir ./out   # recurses, mirrors tree
+gwcli drive export <file-id|url> --output -              # content to stdout
+gwcli drive export <file-id|url> --output - --json       # {content, headRevisionId, ...}
 
 # List / search (paginated, all drives; --limit 0 = no cap)
 gwcli drive list --query "mimeType='application/pdf'" --limit 50
@@ -418,6 +421,7 @@ gwcli drive upload notes.txt --folder <folder-id> --as sheet # force converted-t
 gwcli drive upload ./package-dir --folder <folder-id>        # recurses with mkdir
 gwcli drive upload ./01-catalog.csv --folder <folder-id> --upsert  # safe rerun
 gwcli drive update <file-id|url> ./report.pdf --name "Q3 Report (final).pdf"
+gwcli drive update <file-id|url> ./plan.md --if-revision <headRevisionId>  # guarded
 
 # Folders + move turn a pile of files into a deliverable
 gwcli drive mkdir "Intern Package" --folder <parent-id|url>  # reuses same-name folder
@@ -446,7 +450,8 @@ gwcli drive permissions <file-id|url>                        # who can access (a
   `name (1)`, `name (2)`. Prefer these over plain `upload` when a task may
   be retried.
 - **Composable output.** Every write verb's `--json` returns
-  `id`/`name`/`mimeType`/`size`/`webViewLink`/`parents`. Capture `id` from
+  `id`/`name`/`mimeType`/`size`/`webViewLink`/`parents` (plus
+  `headRevisionId`/`md5Checksum` for uploaded files). Capture `id` from
   an upload/mkdir and feed it straight into `mv`/`share`/`link` — no search
   round-trip needed.
 - `drive share --type`: `user`/`group` need `--email`, `domain` needs
@@ -472,6 +477,81 @@ gwcli drive permissions <file-id|url>                        # who can access (a
   explicit `trashed` clause in `--query` to override.
 - A bad upload is undone with `drive rm <id> --force`; combine with the
   `id` from the upload's JSON for a clean rollback.
+
+### Native Markdown Files in Drive (recommended for shared Markdown)
+
+Drive keeps `.md`/`.markdown` files as native Markdown. Drive previews them,
+and Docs edits them in Markdown Mode with comments and real-time
+collaboration, saving back to Markdown. Prefer this over converting to a
+Google Doc: Doc conversion is lossy (exporting back rewrites YAML frontmatter
+and table alignment rows). `--convert` therefore never converts Markdown;
+only `--as doc` does.
+
+**The loop:** write the `.md`, people edit and comment in Docs, read the
+edits and comments back, push the merged result with a revision guard.
+
+```bash
+# Write: upload a native Markdown file (never converted, even with --convert)
+gwcli drive upload ./plan.md --folder <folder-id> --json   # -> id, headRevisionId
+
+# Pull: content + the revision token in one call, no temp file
+gwcli drive export <file-id> --output - --json > pull.json
+jq -r .content pull.json > plan.md
+rev=$(jq -r .headRevisionId pull.json)
+
+# Push: refused (exit 4) if someone edited the file in Docs since the pull
+gwcli drive update <file-id> ./plan.md --if-revision "$rev" --json
+gwcli drive upload ./plan.md --folder <folder-id> --upsert --if-revision "$rev"
+
+# Comment loop: read what people said, answer, resolve
+gwcli drive comments list <file-id> --json                 # open comments
+gwcli drive comments list <file-id> --include-resolved
+gwcli drive comments add <file-id> --content "Updated the rollout dates"
+gwcli drive comments reply <file-id> <comment-id> --content "Fixed" --resolve
+gwcli drive comments resolve <file-id> <comment-id>
+echo "Long reply" | gwcli drive comments reply <file-id> <comment-id> --content -
+
+# Migrate an existing Google Doc to a native .md file
+gwcli drive to-md <doc-id|url> --json                      # -> droppedComments
+gwcli drive to-md <doc-id|url> --folder <folder-id> --upsert --trash-original
+```
+
+**Rules for agents:**
+- **Always pull with `--output - --json` and push with `--if-revision`.**
+  The guard re-reads the file before writing and refuses with **exit code 4**
+  if it changed since the pull. On exit 4, re-pull, merge your change into
+  the new content, and push with the new `headRevisionId`. Never retry the
+  same push without merging; that discards the person's edit. The check is
+  check-then-write (Drive has no conditional update), so it is racy, but it
+  catches the realistic case.
+- `--if-revision`/`--if-md5` apply to uploaded files (such as Markdown).
+  Native Google Docs have no `headRevisionId`, and guarding one is an error.
+  On `drive upload` the guard needs `--upsert` and a single file; a guarded
+  upsert whose target is gone is also a conflict (exit 4).
+- `drive comments list` shows open comments by default
+  (`--include-resolved`, `--include-deleted` widen it). JSON per comment:
+  `id`, `author{displayName,emailAddress}` (Drive often omits the email),
+  `content`, `quotedFileContent.value` (the text the comment was attached
+  to), `anchor` (opaque, passed through), `resolved`, `createdTime`,
+  `modifiedTime`, `replies[{id,author,content,action,createdTime}]`.
+- `drive comments add` posts an unanchored comment; gwcli never builds
+  anchors. `reply --resolve` and `resolve` post a reply with
+  `action: resolve` (`resolve` needs no `--content`). `--content -` reads
+  stdin.
+- Comment anchors are opaque and may not line up with the text after
+  `drive update` replaces the content. Use `quotedFileContent.value` to
+  find what a comment was about.
+- Docs Markdown Mode is lossy at the edges: smart chips become text or
+  links, inline HTML becomes plain text, and colors, highlights and
+  alignment are dropped. Version history in Docs restores the original.
+  Don't assume YAML frontmatter survives a Docs edit: check it after
+  pulling a file a person edited.
+- `drive to-md <doc>` migrates a Doc to `<doc name>.md` in the Doc's folder
+  (or `--folder`). Doc comments do not carry over: unresolved ones are
+  counted, warned about on stderr, and returned as `droppedComments`.
+  Read them with `drive comments list <doc>` first if they matter.
+  `--upsert` replaces an existing `.md` of that name; `--trash-original`
+  trashes the Doc afterwards (reversible, no `--force`).
 
 ### Google Tasks
 
@@ -692,20 +772,21 @@ Nested labels use `/` separator: `"Work/Projects/Q4"`
 
 - `0` - Success
 - `1` - User error (invalid arguments)
-- `2` - API error
-- `3` - Authentication error
-- `4` - Not found
+- `2` - Command/API error
+- `3` - Authentication or configuration error
+- `4` - Drive write conflict: `--if-revision`/`--if-md5` no longer match
+  (re-pull, merge, push again)
 
 Use for error handling in scripts:
 
 ```bash
-if ! gwcli messages read "$msg_id" 2>/dev/null; then
-  case $? in
-    3) echo "Authentication failed" ;;
-    4) echo "Message not found" ;;
-    *) echo "Error occurred" ;;
-  esac
-fi
+gwcli drive update "$file_id" ./plan.md --if-revision "$rev"
+case $? in
+  0) echo "Pushed" ;;
+  3) echo "Authentication failed" ;;
+  4) echo "Changed since the pull: re-pull, merge, push again" ;;
+  *) echo "Error occurred" ;;
+esac
 ```
 
 ## Gmail Query Syntax

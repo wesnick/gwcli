@@ -91,8 +91,10 @@ The `CmdG` struct is the central object passed to all command handlers.
 - **`format.go`** - Email formatting (markdown, HTML, plain text with YAML frontmatter)
 - **`drive_artifacts.go`** - Detect Google Drive docs/files linked from email bodies (Gemini/Meet artifact chips)
 - **`artifacts.go`** - `artifacts list`/`artifacts download` commands (export/download detected Drive artifacts)
-- **`drive.go`** - `drive get`/`drive export`/`list`/`search`/`update` commands (general Drive file access by ID or URL, not email-specific; includes recursive folder export)
-- **`drive_write.go`** - Drive write/organize verbs: `mkdir`/`mv`/`rename`/`cp`/`rm`/`share`/`link`/`permissions` and the upload engine (multi-path, recursive, `--convert`, `--upsert`); shared `writeDriveFile` composable-JSON helper and idempotent `ensureDriveFolder`
+- **`drive.go`** - `drive get`/`drive export`/`list`/`search`/`update` commands (general Drive file access by ID or URL, not email-specific; includes recursive folder export and `--output -` stdout export)
+- **`drive_write.go`** - Drive write/organize verbs: `mkdir`/`mv`/`rename`/`cp`/`rm`/`share`/`link`/`permissions` and the upload engine (multi-path, recursive, `--convert`, `--upsert`); shared `writeDriveFile`/`driveFileJSON` composable-JSON helpers, idempotent `ensureDriveFolder`, and the `--if-revision`/`--if-md5` write guard (`driveWriteGuard`, `driveConflictError`, `driveExitCode`)
+- **`drive_comments.go`** - `drive comments list`/`add`/`reply`/`resolve` (Drive v3 `comments`/`replies`; trimmed JSON shape `driveCommentOutput`)
+- **`drive_tomd.go`** - `drive to-md`: migrate a Google Doc to a native Markdown (`.md`) file
 - **`tasklists.go`** - Task list operations (list, create, delete)
 - **`tasks.go`** - Task operations (list, get/read, create, update, complete, delete; `@default` list resolution, due-date parsing, subtask ordering)
 - **`keep.go`** - Google Keep notes (list, get, create, delete); service-account/DWD only. Handlers take a `keepClient` interface (not `*gwcli.CmdG`) so they can be tested with a fake
@@ -400,7 +402,8 @@ command group (`drive.go`) exposes it directly for any Drive file by ID
 **or** Drive/Docs URL — no email involved:
 
 ```bash
-# Metadata only (no download): id, name, mimeType, size, modifiedTime, owners
+# Metadata only (no download): id, name, mimeType, size, modifiedTime,
+# headRevisionId, md5Checksum, webViewLink, owners
 gwcli drive get <file-id|url>
 gwcli drive get https://docs.google.com/document/d/<id>/edit --json
 
@@ -408,6 +411,8 @@ gwcli drive get https://docs.google.com/document/d/<id>/edit --json
 gwcli drive export <file-id|url> --output notes.md
 gwcli drive export <file-id|url> --output-dir ~/Downloads
 gwcli drive export <file-id|url> --export-format pdf   # override per-type default
+gwcli drive export <file-id|url> --output -            # content to stdout
+gwcli drive export <file-id|url> --output - --json     # {content, headRevisionId, md5Checksum, ...}
 
 # List / search (paginated, all drives)
 gwcli drive list --query "mimeType='application/pdf'" --limit 50
@@ -421,6 +426,17 @@ gwcli drive upload notes.txt --folder <folder-id> --as sheet  # force converted-
 gwcli drive upload ./package-dir --folder <folder-id>          # recurses, mirrors structure
 gwcli drive upload ./01-catalog.csv --folder <folder-id> --upsert  # idempotent rerun
 gwcli drive update <file-id|url> ./report.pdf --name "Q3 Report (final).pdf"
+gwcli drive update <file-id|url> ./notes.md --if-revision <headRevisionId>  # exit 4 if changed
+gwcli drive upload ./notes.md --folder <folder-id> --upsert --if-revision <headRevisionId>
+
+# Comments (native .md files take Docs comments)
+gwcli drive comments list <file-id|url> [--include-resolved] [--include-deleted]
+gwcli drive comments add <file-id|url> --content "text"            # unanchored
+gwcli drive comments reply <file-id|url> <comment-id> --content "text" [--resolve]
+gwcli drive comments resolve <file-id|url> <comment-id>
+
+# Migrate a Google Doc to a native Markdown file
+gwcli drive to-md <doc-id|url> [--folder <id>] [--upsert] [--trash-original]
 
 # Organize: folders + move turn a pile of files into a deliverable
 gwcli drive mkdir "Intern Package" --folder <parent-id|url>    # reuses same-name folder by default
@@ -518,6 +534,54 @@ as `text/plain` and lands as a Doc even with the spreadsheet target.
 `--upsert` replaces an existing same-name file in the destination (via
 `findDriveChildByName` → `Files.Update` media) instead of creating
 `name (1)`, `name (2)` on every rerun. `--name` is single-file only.
+
+**Native Markdown.** Drive keeps `.md`/`.markdown` files as native
+`text/markdown`; Docs edits them in Markdown Mode (comments, real-time
+collaboration) and saves back to Markdown. This is the recommended path for
+shared Markdown, because Doc conversion is lossy (exporting back rewrites
+YAML frontmatter and table alignment rows). So `.md` is deliberately absent
+from `driveConvertByExt` (`--convert` leaves it native) while
+`driveSourceMimeByExt` declares `text/markdown` for both extensions; only
+`--as doc` converts. `driveUploadTargetMime` picks the target type. Exporting
+a native `.md` is a plain blob download, byte-identical.
+
+**Pull → edit → push.** `drive export --output -` writes the content to
+stdout (`writeDriveExportStdout`; `-` rejected for folders); with `--json`
+it prints `content` (UTF-8 only) plus `headRevisionId`/`md5Checksum`/
+`modifiedTime`. The metadata is read *before* the content, so a race yields
+a spurious conflict, never a lost edit. `drive update` and
+`drive upload --upsert` take `--if-revision`/`--if-md5`
+(`driveWriteGuard`): `checkDriveWriteGuard` re-reads the file
+(`driveGuardFields`) and returns a `*driveConflictError`
+(`errors.Is(err, errDriveConflict)`) on mismatch, naming the current revision
+and telling the caller to re-pull, merge and push. `driveExitCode` maps it to
+**exit 4**. Drive v3 has no `If-Match` update, so this is check-then-write
+(racy, but it catches a person editing in Docs between pull and push). Native
+Google files have no `headRevisionId`, so guarding one is a plain error. On
+upload the guard needs `--upsert` and a single file; a guarded upsert whose
+target is gone is a conflict. `driveWriteFields` includes
+`headRevisionId,md5Checksum`, so every write result carries the next token.
+
+**Comments** (`drive_comments.go`). Drive v3 `comments`/`replies` under the
+existing `drive` scope. These endpoints reject calls without `fields`, so
+every call sets `driveCommentFields`/`driveCommentListFields`/
+`driveReplyFields`. `list` paginates (`listDriveComments`, `includeDeleted`
+passed to the API) and filters resolved comments client-side
+(`filterDriveComments`); JSON is the trimmed `driveCommentOutput` (`anchor`
+passed through verbatim, `quotedFileContent.value`, `replies[]`). `add` is
+unanchored only (anchors for blob files are opaque, so gwcli never builds
+one). `reply --resolve` and `resolve` post a reply with `action: resolve`,
+for which the API does not require content. `--content -` reads stdin
+(`readCommentContent`).
+
+**Doc → Markdown** (`drive_tomd.go`). `drive to-md` exports a Doc as
+`text/markdown` and writes `<name>.md` (`driveToMdName`) into the Doc's first
+parent or `--folder` via `writeDriveMarkdown`. Its `--upsert` lookup filters
+on `mimeType = 'text/markdown'`, so a Doc that is itself named `x.md` is
+never overwritten. The open-comment count (`countOpenDriveComments`) goes to
+stderr as a warning (`outputWriter.writeWarning`) and to JSON as
+`droppedComments`. `--trash-original` trashes the Doc after the write (no
+`--force`, since trash is reversible).
 
 **Folder export.** `drive export <folder>` recurses the folder tree
 (`exportDriveFolder`), exporting every file into a local directory mirroring
@@ -797,3 +861,4 @@ Exit codes:
 - `1` - Unknown command
 - `2` - Command execution error
 - `3` - Connection/config error
+- `4` - Drive write conflict (`--if-revision`/`--if-md5` mismatch on `drive update` / `drive upload --upsert`)

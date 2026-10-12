@@ -432,6 +432,7 @@ gwcli drive get https://docs.google.com/document/d/<id>/edit --json
 gwcli drive export <file-id|url> --output notes.md
 gwcli drive export <file-id|url> --output-dir ~/Downloads
 gwcli drive export <file-id|url> --export-format pdf   # override per-type default
+gwcli drive export <file-id|url> --output -            # content to stdout
 
 # List / search (paginated, across all drives)
 gwcli drive list --query "mimeType='application/pdf'" --limit 50
@@ -443,6 +444,7 @@ gwcli drive upload ./report.pdf --folder <folder-id> --name "Q3 Report.pdf"
 gwcli drive upload *.csv --folder <folder-id> --convert   # CSV->Sheet, DOCX->Doc, ...
 gwcli drive upload notes.md --folder <folder-id>          # stays a native Markdown file
 gwcli drive update <file-id|url> ./report.pdf --name "Q3 Report (final).pdf"
+gwcli drive update <file-id|url> ./notes.md --if-revision <headRevisionId>
 ```
 
 `--convert` converts by extension to the native Google type. Markdown
@@ -456,6 +458,59 @@ when a Doc is what you want.
 `png`/...) or a raw MIME type. Google Docs/Sheets/Slides `Files.Export` has a
 ~10 MB cap; gwcli detects this and suggests `--export-format pdf` (server-side
 PDF export is not subject to the same cap).
+
+#### Native Markdown files
+
+Drive stores `.md`/`.markdown` files as native Markdown: Drive renders a
+preview, and Docs opens them in Markdown Mode for rich editing, comments and
+real-time collaboration, saving back to Markdown. This is the recommended way
+to share Markdown, because converting to a Google Doc and exporting back is
+lossy. An agent writes the file, people edit and comment in Docs, and the
+agent reads the edits and comments back:
+
+```bash
+# Write: upload a native Markdown file (never converted, even with --convert)
+gwcli drive upload ./plan.md --folder <folder-id> --json   # -> id, headRevisionId
+
+# Pull: content + the revision token in one call, no temp file
+gwcli drive export <file-id> --output - --json > pull.json
+jq -r .content pull.json > plan.md
+rev=$(jq -r .headRevisionId pull.json)
+
+# Push: refused (exit 4) if someone edited the file in Docs since the pull
+gwcli drive update <file-id> ./plan.md --if-revision "$rev" --json
+gwcli drive upload ./plan.md --folder <folder-id> --upsert --if-revision "$rev"
+
+# Comment loop: read what people said, answer, resolve
+gwcli drive comments list <file-id> --json                 # open comments
+gwcli drive comments list <file-id> --include-resolved
+gwcli drive comments add <file-id> --content "Updated the rollout dates"
+gwcli drive comments reply <file-id> <comment-id> --content "Fixed" --resolve
+gwcli drive comments resolve <file-id> <comment-id>
+echo "Long reply" | gwcli drive comments reply <file-id> <comment-id> --content -
+
+# Migrate an existing Google Doc to a native .md file
+gwcli drive to-md <doc-id|url> --json                      # -> droppedComments
+gwcli drive to-md <doc-id|url> --folder <folder-id> --upsert --trash-original
+```
+
+- `drive export --output -` writes the content to stdout. With `--json` it
+  prints one object with `content` (UTF-8 text) plus `headRevisionId`,
+  `md5Checksum` and `modifiedTime`. `drive get` also shows `headRevisionId`,
+  `md5Checksum` and `webViewLink`.
+- `--if-revision <headRevisionId>` / `--if-md5 <md5>` on `drive update` and
+  `drive upload --upsert` re-read the file before writing and refuse with
+  exit code 4 if it changed. Re-pull, merge, then push again. Drive has no
+  conditional write, so the check is racy, but it catches a person editing
+  the file between the pull and the push. Native Google files have no
+  revision checksum, so the guard applies to uploaded files such as
+  Markdown.
+- `drive comments` covers unanchored comments: `list` passes `anchor` and
+  `quotedFileContent` through, and `add` never creates an anchor.
+- `drive to-md` exports a Doc as Markdown into `<doc name>.md` in the Doc's
+  folder (or `--folder`). Doc comments do not carry over; the count of
+  unresolved ones is printed as a warning and returned as `droppedComments`.
+  `--trash-original` trashes the Doc afterwards (reversible).
 
 ### Task Lists
 
