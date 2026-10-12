@@ -283,3 +283,87 @@ func TestRunDriveExport_JSONIncludesRevision(t *testing.T) {
 		t.Errorf("exported content = %q", data)
 	}
 }
+
+// fakeExportDrive serves F1 with the given metadata JSON and content.
+func fakeExportDrive(t *testing.T, meta, content string) *gwcli.CmdG {
+	t.Helper()
+	conn, err := gwcli.NewFake(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Query().Get("alt") == "media" || strings.HasSuffix(req.URL.Path, "/export") {
+			return jsonResponse(content), nil
+		}
+		return jsonResponse(meta), nil
+	})})
+	if err != nil {
+		t.Fatalf("NewFake() error = %v", err)
+	}
+	return conn
+}
+
+const markdownMeta = `{"id":"F1","name":"note.md","mimeType":"text/markdown",` +
+	`"headRevisionId":"REV2","md5Checksum":"abc123","modifiedTime":"2026-01-02T03:04:05Z"}`
+
+func TestRunDriveExport_Stdout(t *testing.T) {
+	const content = "---\ntitle: probe\n---\n# Note\n"
+	conn := fakeExportDrive(t, markdownMeta, content)
+	t.Chdir(t.TempDir())
+
+	var buf bytes.Buffer
+	out := &outputWriter{json: false, writer: &buf}
+	if err := runDriveExport(context.Background(), conn, "F1", "", "", "-", out); err != nil {
+		t.Fatalf("runDriveExport(-) error = %v", err)
+	}
+	if buf.String() != content {
+		t.Fatalf("stdout = %q, want exactly the content %q (no confirmation)", buf.String(), content)
+	}
+	if entries, _ := os.ReadDir("."); len(entries) != 0 {
+		t.Fatalf("--output - wrote files to the working directory: %v", entries)
+	}
+}
+
+func TestRunDriveExport_StdoutJSON(t *testing.T) {
+	const content = "# Note\n\nnaïve café\n"
+	conn := fakeExportDrive(t, markdownMeta, content)
+	var buf bytes.Buffer
+	out := &outputWriter{json: true, writer: &buf}
+	if err := runDriveExport(context.Background(), conn, "F1", "", "", "-", out); err != nil {
+		t.Fatalf("runDriveExport(-, json) error = %v", err)
+	}
+	var got map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v (raw %s)", err, buf.String())
+	}
+	if got["content"] != content {
+		t.Errorf("content = %q, want %q", got["content"], content)
+	}
+	if got["headRevisionId"] != "REV2" || got["md5Checksum"] != "abc123" || got["id"] != "F1" ||
+		got["modifiedTime"] != "2026-01-02T03:04:05Z" {
+		t.Errorf("metadata = %+v", got)
+	}
+	if _, ok := got["file"]; ok {
+		t.Errorf("stdout JSON should not report a file: %+v", got)
+	}
+}
+
+func TestRunDriveExport_StdoutRejects(t *testing.T) {
+	folder := fakeExportDrive(t, `{"id":"F1","name":"Notes","mimeType":"application/vnd.google-apps.folder"}`, "")
+	out := &outputWriter{json: false, writer: &bytes.Buffer{}}
+	if err := runDriveExport(context.Background(), folder, "F1", "", "", "-", out); err == nil {
+		t.Errorf("folder with --output -: expected error")
+	}
+
+	binary := fakeExportDrive(t, `{"id":"F1","name":"x.bin","mimeType":"application/octet-stream"}`, "\xff\xfe\x00")
+	out = &outputWriter{json: true, writer: &bytes.Buffer{}}
+	if err := runDriveExport(context.Background(), binary, "F1", "", "", "-", out); err == nil {
+		t.Errorf("non-UTF-8 content with --output - --json: expected error")
+	}
+
+	// Raw (non-JSON) stdout passes binary through untouched.
+	var buf bytes.Buffer
+	out = &outputWriter{json: false, writer: &buf}
+	if err := runDriveExport(context.Background(), binary, "F1", "", "", "-", out); err != nil {
+		t.Fatalf("raw binary to stdout: %v", err)
+	}
+	if buf.String() != "\xff\xfe\x00" {
+		t.Errorf("raw stdout = %q", buf.String())
+	}
+}

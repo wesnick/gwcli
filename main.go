@@ -210,7 +210,7 @@ type CLI struct {
 			Ref          string `arg:"" required:"" name:"file" help:"Drive file ID or Drive/Docs URL"`
 			ExportFormat string `name:"export-format" help:"Override export format for native docs (alias e.g. pdf,md,docx,csv,xlsx or a raw MIME type)"`
 			OutputDir    string `help:"Output directory (default ~/Downloads); a relative --output is placed inside it" type:"path"`
-			Output       string `help:"Output filename (relative to --output-dir when given, else the current directory)"`
+			Output       string `help:"Output filename (relative to --output-dir when given, else the current directory); - writes to stdout"`
 		} `cmd:"" help:"Export/download a Google Drive file by ID or URL"`
 
 		List struct {

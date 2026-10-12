@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/wesnick/gwcli/pkg/gwcli"
 	drive "google.golang.org/api/drive/v3"
@@ -108,8 +109,13 @@ func resolveDriveExportOutput(outputDir, outputFile string) string {
 	return filepath.Join(expandPath(outputDir), outputFile)
 }
 
+// driveExportStdout is the --output value that streams the content to stdout.
+const driveExportStdout = "-"
+
 // runDriveExport exports (native Google-apps docs) or downloads (binary files)
 // a Drive file by ID or URL. Mirrors `artifacts download` output conventions.
+// outputFile "-" writes the content to stdout instead (with --json, a JSON
+// object carrying the content and its revision metadata).
 func runDriveExport(ctx context.Context, conn *gwcli.CmdG, ref, exportFormat, outputDir, outputFile string, out *outputWriter) error {
 	art, err := resolveDriveRef(ref)
 	if err != nil {
@@ -132,6 +138,9 @@ func runDriveExport(ctx context.Context, conn *gwcli.CmdG, ref, exportFormat, ou
 		return wrapDriveErr(err)
 	}
 	if meta.MimeType == driveFolderMime {
+		if outputFile == driveExportStdout {
+			return fmt.Errorf("%q is a folder; --output - only works for a single file", meta.Name)
+		}
 		dest := expandPath(defaultDriveExportDir)
 		if outputDir != "" {
 			dest = expandPath(outputDir)
@@ -158,6 +167,10 @@ func runDriveExport(ctx context.Context, conn *gwcli.CmdG, ref, exportFormat, ou
 	data, filename, err := fetchDriveArtifactFormat(ctx, conn, art, exportFormat)
 	if err != nil {
 		return fmt.Errorf("failed to export Drive file %q: %w", art.ID, err)
+	}
+
+	if outputFile == driveExportStdout {
+		return writeDriveExportStdout(meta, data, out)
 	}
 
 	var outputPath string
@@ -197,6 +210,30 @@ func runDriveExport(ctx context.Context, conn *gwcli.CmdG, ref, exportFormat, ou
 	}
 	out.writeMessage(fmt.Sprintf("Exported: %s (%s)", outputPath, formatSize(int64(len(data)))))
 	return nil
+}
+
+// writeDriveExportStdout writes exported content to the output stream: raw
+// bytes with no confirmation message, or with --json an object carrying the
+// content as UTF-8 text plus the metadata needed for a guarded write-back.
+func writeDriveExportStdout(meta *drive.File, data []byte, out *outputWriter) error {
+	if !out.json {
+		_, err := out.writer.Write(data)
+		return err
+	}
+	if !utf8.Valid(data) {
+		return fmt.Errorf("%q (%s) is not UTF-8 text and cannot be embedded in JSON; "+
+			"use --output <file> instead", meta.Name, meta.MimeType)
+	}
+	return out.writeJSON(map[string]interface{}{
+		"id":             meta.Id,
+		"name":           meta.Name,
+		"mimeType":       meta.MimeType,
+		"modifiedTime":   meta.ModifiedTime,
+		"headRevisionId": meta.HeadRevisionId,
+		"md5Checksum":    meta.Md5Checksum,
+		"bytes":          len(data),
+		"content":        string(data),
+	})
 }
 
 // exportDriveFolder recursively exports every file under folderID into the
