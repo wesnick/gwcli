@@ -291,6 +291,13 @@ type CLI struct {
 			Ref string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
 		} `cmd:"" help:"List who can access a Drive file"`
 
+		ToMd struct {
+			Ref           string `arg:"" required:"" name:"doc" help:"Google Doc ID or URL"`
+			Folder        string `name:"folder" help:"Destination folder ID or URL (default: the Doc's parent folder)"`
+			Upsert        bool   `name:"upsert" help:"Replace an existing same-name .md file in the destination instead of creating a duplicate"`
+			TrashOriginal bool   `name:"trash-original" help:"Trash the source Doc after the Markdown file is written (reversible)"`
+		} `cmd:"" name:"to-md" help:"Migrate a Google Doc to a native Markdown (.md) file"`
+
 		Comments struct {
 			List struct {
 				Ref             string `arg:"" required:"" name:"file" help:"Drive file ID or URL"`
@@ -996,6 +1003,19 @@ func main() {
 			os.Exit(3)
 		}
 		if err := runDrivePermissions(cmdCtx, conn, cli.Drive.Permissions.Ref, out); err != nil {
+			out.writeError(err)
+			os.Exit(2)
+		}
+
+	case "drive to-md <doc>":
+		cmdCtx := context.Background()
+		conn, err := getConnection(cli.Config, cli.User, cli.Verbose)
+		if err != nil {
+			out.writeError(err)
+			os.Exit(3)
+		}
+		if err := runDriveToMd(cmdCtx, conn, cli.Drive.ToMd.Ref, cli.Drive.ToMd.Folder,
+			cli.Drive.ToMd.Upsert, cli.Drive.ToMd.TrashOriginal, out); err != nil {
 			out.writeError(err)
 			os.Exit(2)
 		}
