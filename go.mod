@@ -4,7 +4,7 @@ go 1.26.8
 
 require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
-	github.com/alecthomas/kong v1.16.1
+	github.com/alecthomas/kong v1.17.0
 	github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.10.2
